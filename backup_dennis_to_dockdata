@@ -1,0 +1,6 @@
+rsync -av ~/bin /Volumes/dockdata/UserDennis
+rsync -av ~/db /Volumes/dockdata/UserDennis
+rsync -av ~/Downloads /Volumes/dockdata/UserDennis
+rsync -av ~/rje /Volumes/dockdata/UserDennis
+rsync -av ~/Pictures /Volumes/dockdata/UserDennis
+rsync -av ~/Desktop /Volumes/dockdata/UserDennis
