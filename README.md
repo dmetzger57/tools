@@ -15,7 +15,7 @@ This repository contains my personal tools.
 
 <p>If a file in the file system is not currently in the database</p>
 - Create an entry in the database
-- Print a line indicating the file was added in the format ***“Added - file_name***
+- Print a line indicating the file was added in the format “Added - file_name
 
 <p>If a file is in the database but no longer on the file system</p>
 - Print a warning in the format ***“Missing - file_name”***
@@ -32,7 +32,7 @@ This repository contains my personal tools.
 
 ### Usage
 
-<p>*files_changed_audit --db database_file_name --root path_name_to_be_processed*</p>
+<p>files_changed_audit --db database_file_name --root path_name_to_be_processed</p>
 
 <p>When run without parameters, the scipt will prompt for the database file name and path name to be inventoried.</p>
 
