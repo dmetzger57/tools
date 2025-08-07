@@ -3,7 +3,7 @@
 This repository contains my personal tools.
 
 
-## files_change_audit.py
+## files\_change\_audit.py
 
 ### Requirements
 
@@ -13,22 +13,26 @@ This repository contains my personal tools.
 
 <p>The script should recursively process all folders under the root directory</p>
 
-<p>If a file in the file system is not currently in the database
-- Create an entry in the database
-- Print a line indicating the file was added in the format “Added - file_name</P
+<p>If a file in the file system is not currently in the database:</p>
 
-<p>If a file is in the database but no longer on the file system
-- Print a warning in the format ***“Missing - file_name”***</p>
+* Create an entry in the database
+* Print a line indicating the file was added in the format “Added - file_name
 
-<p>If a file on the file system has changed
-- Print a warning in the format ***“Changed - file name”***</p>
+<p>If a file is in the database but no longer on the file system</p>
 
-<p>When all folder / files have been processed, print the following statistics:
-- Number of folders processed
-- Number of files processed
-- Number of files added
-- Number of files missing
-- Number of files changed</p>
+* Print a warning in the format ***“Missing - file_name”***
+
+<p>If a file on the file system has changed:</p>
+
+* Print a warning in the format ***“Changed - file name”***
+
+<p>When all folder / files have been processed, print the following statistics:</p>
+
+* Number of folders processed
+* Number of files processed
+* Number of files added
+* Number of files missing
+* Number of files changed</p>
 
 ### Usage
 
@@ -36,7 +40,7 @@ This repository contains my personal tools.
 
 <p>When run without parameters, the scipt will prompt for the database file name and path name to be inventoried.</p>
 
-## archive_changed_files.sh
+## archive\_changed\_files.sh
 
 ### Requirements
 
