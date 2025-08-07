@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# --- SQLite escaping function ---
+sqlite3_escape() {
+  echo "$1" | sed "s/'/''/g"
+}
+
+# --- Parse CLI options ---
+while getopts "f:d:" opt; do
+  case $opt in
+    f) folder_path="$OPTARG" ;;
+    d) db_name="$OPTARG" ;;
+    *) echo "Usage: $0 [-f folder_path] [-d database_name]" ; exit 1 ;;
+  esac
+done
+
+# --- Prompt if arguments missing ---
+if [ -z "$folder_path" ]; then
+  read -rp "Enter the folder path to search: " folder_path
+fi
+
+if [ -z "$db_name" ]; then
+  read -rp "Enter the database name (without extension): " db_name
+fi
+
+# --- Prepare DB ---
+db_dir="$HOME/db"
+mkdir -p "$db_dir"
+db_file="$db_dir/$db_name.db"
+
+# --- Initialize database ---
+sqlite3 "$db_file" <<EOF
+CREATE TABLE IF NOT EXISTS files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_name TEXT,
+  full_path TEXT UNIQUE,
+  created_date TEXT,
+  modified_date TEXT,
+  file_size INTEGER,
+  file_owner TEXT,
+  checksum TEXT
+);
+EOF
+
+# --- File processing ---
+echo "🔍 Scanning files in: $folder_path"
+added_count=0
+skipped_count=0
+total_count=0
+
+# Use find, exclude hidden files/directories
+find "$folder_path" -type f ! -name ".*" ! -path "*/.*/*" | while read -r file; do
+  ((total_count++))
+  full_path=$(realpath "$file")
+
+  # Check if file already exists in DB
+  exists=$(sqlite3 "$db_file" "SELECT 1 FROM files WHERE full_path = '$(sqlite3_escape "$full_path")' LIMIT 1;")
+
+  if [ -n "$exists" ]; then
+    ((skipped_count++))
+    echo -ne "\rSkipped: $skipped_count | Added: $added_count | Total scanned: $total_count"
+    continue
+  fi
+
+  # Only compute if not in DB
+  file_name=$(basename "$file")
+  created_date=$(stat -f "%SB" -t "%Y-%m-%d %H:%M:%S" "$file")
+  modified_date=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$file")
+  file_size=$(stat -f "%z" "$file")
+  file_owner=$(stat -f "%Su" "$file")
+  checksum=$(shasum -a 256 "$file" | awk '{print $1}')
+
+  sqlite3 "$db_file" <<EOF
+INSERT INTO files (file_name, full_path, created_date, modified_date, file_size, file_owner, checksum)
+VALUES (
+  '$(sqlite3_escape "$file_name")',
+  '$(sqlite3_escape "$full_path")',
+  '$created_date',
+  '$modified_date',
+  $file_size,
+  '$(sqlite3_escape "$file_owner")',
+  '$checksum'
+);
+EOF
+
+  ((added_count++))
+  echo -ne "\rSkipped: $skipped_count | Added: $added_count | Total scanned: $total_count"
+done
+
+echo -e "\n✅ Done. Added $added_count new files. Skipped $skipped_count existing files."
