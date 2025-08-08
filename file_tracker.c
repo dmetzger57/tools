@@ -11,6 +11,8 @@
 
 #define HASH_SIZE 65
 
+int update = 0;
+
 int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0;
 
 void get_owner(uid_t uid, char *owner, size_t size) {
@@ -85,35 +87,39 @@ void process_file(const char *path, const char *name, sqlite3 *db, int verifyChe
             if (verifyChecksum && strcmp(checksum, db_checksum) == 0) {
                 unchangedCount++;
             } else {
+		if( update == 1 ) {
                 const char *update_sql = "UPDATE files SET checksum = ?, last_modified = ? WHERE full_path = ?";
-                sqlite3_stmt *update_stmt;
-                sqlite3_prepare_v2(db, update_sql, -1, &update_stmt, NULL);
-                sqlite3_bind_text(update_stmt, 1, checksum, -1, SQLITE_STATIC);
-                sqlite3_bind_int64(update_stmt, 2, st.st_mtime);
-                sqlite3_bind_text(update_stmt, 3, path, -1, SQLITE_STATIC);
-                sqlite3_step(update_stmt);
-                sqlite3_finalize(update_stmt);
+                    sqlite3_stmt *update_stmt;
+                    sqlite3_prepare_v2(db, update_sql, -1, &update_stmt, NULL);
+                    sqlite3_bind_text(update_stmt, 1, checksum, -1, SQLITE_STATIC);
+                    sqlite3_bind_int64(update_stmt, 2, st.st_mtime);
+                    sqlite3_bind_text(update_stmt, 3, path, -1, SQLITE_STATIC);
+                    sqlite3_step(update_stmt);
+                    sqlite3_finalize(update_stmt);
+		}
 		printf("Changed: %s\n",path);
                 changedCount++;
             }
         }
     } else {
         char checksum[HASH_SIZE], owner[256];
-        compute_sha256(path, checksum);
-        get_owner(st.st_uid, owner, sizeof(owner));
+	if ( update == 1 ) {
+            compute_sha256(path, checksum);
+            get_owner(st.st_uid, owner, sizeof(owner));
 
-        const char *insert_sql = "INSERT INTO files (file_name, full_path, size, created, last_modified, owner, checksum) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        sqlite3_stmt *insert_stmt;
-        sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL);
-        sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC);
-        sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC);
-        sqlite3_bind_int64(insert_stmt, 3, st.st_size);
-        sqlite3_bind_int64(insert_stmt, 4, st.st_ctime);
-        sqlite3_bind_int64(insert_stmt, 5, st.st_mtime);
-        sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC);
-        sqlite3_bind_text(insert_stmt, 7, checksum, -1, SQLITE_STATIC);
-        sqlite3_step(insert_stmt);
-        sqlite3_finalize(insert_stmt);
+            const char *insert_sql = "INSERT INTO files (file_name, full_path, size, created, last_modified, owner, checksum) VALUES (?, ?, ?, ?, ?, ?, ?)";
+            sqlite3_stmt *insert_stmt;
+            sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL);
+            sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC);
+            sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC);
+            sqlite3_bind_int64(insert_stmt, 3, st.st_size);
+            sqlite3_bind_int64(insert_stmt, 4, st.st_ctime);
+            sqlite3_bind_int64(insert_stmt, 5, st.st_mtime);
+            sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC);
+            sqlite3_bind_text(insert_stmt, 7, checksum, -1, SQLITE_STATIC);
+            sqlite3_step(insert_stmt);
+            sqlite3_finalize(insert_stmt);
+        }
 	printf("New: %s\n",path);
         newCount++;
     }
@@ -148,6 +154,7 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) path = argv[++i];
         else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) db_name = argv[++i];
         else if (strcmp(argv[i], "-v") == 0) verify = 1;
+        else if (strcmp(argv[i], "-u") == 0) update = 1;
     }
 
     char input[1024];
