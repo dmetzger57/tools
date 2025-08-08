@@ -10,7 +10,7 @@ This repository contains my personal tools.
 
 <p>Usage:
 file_tracker [-v] [-p path] [-d db_name]<br>
--u: Update the database for files that habe been added, deleted or modified<br>
+-u: Update the database for files that have been added, deleted or modified<br>
 -v: Compare by calculating the current checksum, without the -v the last modified time is used to verify<br>
 -p: Full path of the directory structure to be processed<br>
 -d: Name of the database which will reside in $HOME/db. The name will have '.db' added as a suffix.
