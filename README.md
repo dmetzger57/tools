@@ -2,43 +2,18 @@
 
 This repository contains my personal tools.
 
+## file_tracker
 
-## files\_change\_audit.py
+<p>Creates a SQL database of all files in a specified path containing the file name. checksum, last modified data and owner.</p>
 
-### Requirements
+<p>The database is stored in the folder **db** located in the Home directory.</>
 
-<p>Use a SQL database containing the following information for each file under a specified folder with the database with the database stored in the folder named db under the users home directory. The name of the database can either be specified by the command line option “--db database_name” or the script should prompt for the database name. </p>
-
-<p>The script should prompt for the pathname of the root directory to process unless it is specified by the command line argument “--root path_name”.</p>
-
-<p>The script should recursively process all folders under the root directory</p>
-
-<p>If a file in the file system is not currently in the database:</p>
-
-* Create an entry in the database
-* Print a line indicating the file was added in the format “Added - file_name
-
-<p>If a file is in the database but no longer on the file system</p>
-
-* Print a warning in the format ***“Missing - file_name”***
-
-<p>If a file on the file system has changed:</p>
-
-* Print a warning in the format ***“Changed - file name”***
-
-<p>When all folder / files have been processed, print the following statistics:</p>
-
-* Number of folders processed
-* Number of files processed
-* Number of files added
-* Number of files missing
-* Number of files changed</p>
-
-### Usage
-
-<p>files_changed_audit --db database_file_name --root path_name_to_be_processed</p>
-
-<p>When run without parameters, the scipt will prompt for the database file name and path name to be inventoried.</p>
+<p>Usage:
+file_tracker [-v] [-p path] [-d db_name]<br>
+-v: Compare by calculating the current checksum, without the -v the last modified time is used to verify.<br>
+-p: Full path of the directory structure to be processed<br>
+-d: Name of the database which will reside in $HOME/db. The name will have '.db' added as a suffix.
+</p>
 
 ## archive\_changed\_files.sh
 
