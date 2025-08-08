@@ -139,7 +139,14 @@ void traverse_directory(const char *dir_path, sqlite3 *db, int verifyChecksum) {
             if (S_ISDIR(st.st_mode)) {
                 traverse_directory(full_path, db, verifyChecksum);
             } else {
-                process_file(full_path, entry->d_name, db, verifyChecksum);
+		if( strstr( full_path, ".DS_Store" ) == NULL &&
+		    strstr( full_path, ".Trashes" ) == NULL &&
+		    strstr( full_path, ".Trash" ) == NULL &&
+		    strstr( full_path, ".Spotlight" ) == NULL &&
+		    strstr( full_path, ".fseventsd" ) == NULL &&
+		    strstr( full_path, ".localized" ) == NULL ) {
+                    process_file(full_path, entry->d_name, db, verifyChecksum);
+		}
             }
         }
     }
