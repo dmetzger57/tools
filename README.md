@@ -6,7 +6,7 @@ This repository contains my personal tools.
 
 <p>Creates a SQL database of all files in a specified path containing the file name. checksum, last modified data and owner.</p>
 
-<p>The database is stored in the folder **db** located in the Home directory.</>
+<p>The database is stored in the folder 'db' located in the Home directory.</>
 
 <p>Usage:
 file_tracker [-v] [-p path] [-d db_name]<br>
