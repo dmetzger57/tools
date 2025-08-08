@@ -21,4 +21,4 @@ clean:
 	rm -f $(TARGET) $(OBJ)
 
 install:
-	mv file_tracker /Users/dennis/bin
+	mv file_tracker $(HOME)/bin
