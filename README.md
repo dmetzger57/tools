@@ -25,7 +25,9 @@ file_tracker [-v] [-p path] [-d db_name]<br>
 ## weather_data
 
 Pulls weather data from meteostat.p.rapidapi.com for a specified date range. The output is a CSV file named weather_data_${START}_to_${END}.csv.
-### Data
+
+CSV Data:
+
 - Temp (Min)
 - Temp (Max)
 - Temp (Avg)
