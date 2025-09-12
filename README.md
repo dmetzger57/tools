@@ -22,3 +22,20 @@ file_tracker [-v] [-p path] [-d db_name]<br>
 
 <p>Create zipped archive of files in ~/Documents changed between two dates specified by "-s" as the start date and "-e" as the end date using the format "mm-dd-yy". Store the archive in /Volumes/dockdata/iCloudArchive using the name format "Documents_Changed_MM-DD-YY_to_MM-DD-YY"</p>
 
+## weather_data
+
+Pulls weather data from meteostat.p.rapidapi.com for a specified date range. The output is a CSV file named weather_data_${START}_to_${END}.csv.
+### Data
+- Temp (Min)
+- Temp (Max)
+- Temp (Avg)
+- Dew Point
+- Relative Humidity
+- Wind Speed
+- Barometric Pressure
+- Precipitation
+- Rainfall
+<br>
+
+
+
