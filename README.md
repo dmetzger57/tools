@@ -37,7 +37,10 @@ CSV Data:
 - Barometric Pressure
 - Precipitation
 - Rainfall
-<br>
 
-
+## Usage
+<p>
+weather_data Start_Date End_Date<br>
+Date Format: YYYY-MM-DD
+</p>
 
