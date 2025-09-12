@@ -9,10 +9,10 @@ fi
 START=$1
 END=$2
 
-# Location (New York City example: lat, lon, elevation in meters)
-LAT=40.7128
-LON=-74.0060
-ALT=10
+# Location (688 Donad Drive South, Bridgewater NJ 08807)
+LAT=40.59607
+LON=-74.62790
+ALT=100
 
 # Output file
 OUTFILE="weather_data_${START}_to_${END}.csv"
