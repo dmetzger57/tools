@@ -22,3 +22,5 @@ clean:
 
 install:
 	mv file_tracker $(HOME)/bin
+	mv weather_data $(HOME)/bin
+	chmod 0777 $(HOME)/bin/weather_data
