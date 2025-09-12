@@ -1,0 +1,49 @@
+#!/bin/zsh
+
+# --- Command-line arguments ---
+if [ $# -ne 2 ]; then
+  echo "Usage: $0 <start-date YYYY-MM-DD> <end-date YYYY-MM-DD>"
+  exit 1
+fi
+
+START=$1
+END=$2
+
+# Location (New York City example: lat, lon, elevation in meters)
+LAT=40.7128
+LON=-74.0060
+ALT=10
+
+# Output file
+OUTFILE="weather_data_${START}_to_${END}.csv"
+
+# Your Meteostat API key (from RapidAPI)
+API_KEY="8507e04829msh6e8611ad2c6b70ep1a7ebejsna23b52e04c94"
+
+# Fetch JSON from Meteostat API (daily data in imperial units)
+curl -s "https://meteostat.p.rapidapi.com/point/daily?lat=$LAT&lon=$LON&alt=$ALT&start=$START&end=$END&units=imperial" \
+  -H "X-RapidAPI-Key: $API_KEY" \
+  -H "X-RapidAPI-Host: meteostat.p.rapidapi.com" \
+  | jq -r '
+      (["date",
+        "tmin (°F)","tmax (°F)","tavg (°F)",
+        "dwp (°F)",
+        "rhum (%)",
+        "wspd (mph)",
+        "pres (in)",
+        "precipitation (in)",
+        "rainfall (in)"]) as $header |
+      ($header, (.data[] | [
+        .date,
+        .tmin, .tmax, .tavg,
+        .dwp,
+        .rhum,
+        .wspd,
+        .pres,
+        .prcp,
+        .prcp
+      ]))
+      | @csv
+    ' > "$OUTFILE"
+
+echo "✅ Weather dataset saved to $OUTFILE"
