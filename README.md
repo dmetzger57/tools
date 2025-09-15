@@ -44,3 +44,16 @@ weather_data Start_Date End_Date<br>
 Date Format: YYYY-MM-DD
 </p>
 
+## JPGDATE
+
+Updates the photo Create Meta data to the specified date & time.
+
+### Usage
+jpgdate "YYYY-MM-DD HH:MM:SS" file1.jpg [file2.jpg ...]
+
+## TIFFDATE
+
+Updates the photo Create Meta data to the specified date & time.
+
+### Usage
+tiffdate -d "YYYY:MM:DD HH:MM:SS" file1.tif [file2.tif ...]
