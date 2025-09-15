@@ -4,7 +4,7 @@
 #include <tiffio.h>
 
 void usage(const char *progname) {
-    fprintf(stderr, "Usage: %s -d \"YYYY:MM:DD HH:MM:SS\" file1.tif [file2.tif ...]\n", progname);
+    fprintf(stderr, "Usage: %s -d \"YYYY-MM-DD HH:MM:SS\" file1.tif [file2.tif ...]\n", progname);
     exit(1);
 }
 
@@ -30,10 +30,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Validate date format (basic check, must be "YYYY:MM:DD HH:MM:SS")
-    if (strlen(date) != 19 || date[4] != ':' || date[7] != ':' || date[10] != ' ' ||
+    // Validate date format (basic check, must be "YYYY-MM-DD HH:MM:SS")
+    if (strlen(date) != 19 || date[4] != '-' || date[7] != '-' || date[10] != ' ' ||
         date[13] != ':' || date[16] != ':') {
-        fprintf(stderr, "Error: date format must be \"YYYY:MM:DD HH:MM:SS\"\n");
+        fprintf(stderr, "Error: date format must be \"YYYY-MM-DD HH:MM:SS\"\n");
         return 1;
     }
 
