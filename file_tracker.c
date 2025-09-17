@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
     }
 
     char db_path[1024];
-    snprintf(db_path, sizeof(db_path), "%s/Desktop/db/%s.db", getenv("HOME"), db_name);
+    snprintf(db_path, sizeof(db_path), "%s/Desktop/db/FileTrcker/%s.db", getenv("HOME"), db_name);
     char *mkdir_cmd;
     asprintf(&mkdir_cmd, "mkdir -p %s/db", getenv("HOME"));
     system(mkdir_cmd);
