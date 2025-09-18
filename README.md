@@ -49,7 +49,7 @@ Display data regarding all the files recorded in the given file_tracker database
 Create a CLI tool to display information on all the files recorded in the file_tracker database
 
 The commad requires the following option:<br>
-- d DbName<br>
+-d DbName<br>
 Where DbName is the name of the file_tracker database to be processed.
 
 The file_tracker databases are stored in \${HOME}/db/FileTracker
