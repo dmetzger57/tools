@@ -41,3 +41,6 @@ $(TARGET): $(SRC)
 
 clean:
 	rm -f $(TARGET) *.o
+
+install:
+	mv file_tracker ${HOME}/Desktop/bin
