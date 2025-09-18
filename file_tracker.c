@@ -219,7 +219,8 @@ void traverse_directory(const char *dir_path) {
 }
 
 // ==== Worker thread function ====
-void *worker(void *arg) {
+// void *worker(void *arg) {
+void *worker() {
     sqlite3 *db;
     if (sqlite3_open(global_db_path, &db)) {
         fprintf(stderr, "Worker can't open DB: %s\n", sqlite3_errmsg(db));
