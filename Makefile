@@ -1,9 +1,9 @@
-# Makefile for threaded_file_tracker
+# Makefile for file_tracker
 
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2
-TARGET  = threaded_file_tracker
-SRC     = threaded_file_tracker.c
+TARGET  = file_tracker
+SRC     = file_tracker.c
 
 # Try to get OpenSSL/SQLite flags from pkg-config if available
 PKG_CONFIG ?= pkg-config
@@ -12,10 +12,18 @@ SSL_LIBS    := $(shell $(PKG_CONFIG) --libs openssl 2>/dev/null)
 SQLITE_CFLAGS := $(shell $(PKG_CONFIG) --cflags sqlite3 2>/dev/null)
 SQLITE_LIBS   := $(shell $(PKG_CONFIG) --libs sqlite3 2>/dev/null)
 
-# Fallback if pkg-config not available (macOS Homebrew typical paths)
+# Detect architecture (arm64 = Apple Silicon, x86_64 = Intel)
+ARCH := $(shell uname -m)
+
+# Fallback if pkg-config not available
 ifeq ($(SSL_CFLAGS),)
-SSL_CFLAGS = -I/opt/homebrew/opt/openssl@3/include -I/usr/local/opt/openssl@3/include
-SSL_LIBS   = -L/opt/homebrew/opt/openssl@3/lib -L/usr/local/opt/openssl@3/lib -lssl -lcrypto
+ifeq ($(ARCH),arm64)
+SSL_CFLAGS = -I/opt/homebrew/opt/openssl@3/include
+SSL_LIBS   = -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
+else
+SSL_CFLAGS = -I/usr/local/opt/openssl@3/include
+SSL_LIBS   = -L/usr/local/opt/openssl@3/lib -lssl -lcrypto
+endif
 endif
 
 ifeq ($(SQLITE_LIBS),)
