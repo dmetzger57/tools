@@ -123,7 +123,7 @@ void search_database(const char *dbname, const char *db_path, const char *filena
             printf("Checksum: %s\n\n", sqlite3_column_text(stmt, 7));
 	}
 	else {
-            printf("%s: %s\n", dbname, sqlite3_column_text(stmt, 2));
+            printf("%s\n", sqlite3_column_text(stmt, 2));
 	}
     }
 
