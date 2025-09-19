@@ -12,9 +12,9 @@
 
 #define HASH_SIZE 65
 #define MAX_PATH 4096
-#define NUM_THREADS 4   // Adjust based on CPU cores
 
 // ==== Globals ====
+int number_of_threads = 4;
 int update = 0;
 int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0;
 
@@ -247,6 +247,7 @@ int main(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) db_name = argv[++i];
         else if (strcmp(argv[i], "-v") == 0) verifyChecksum = 1;
         else if (strcmp(argv[i], "-u") == 0) update = 1;
+	else if (strcmp(argv[i], "-t") == 0) number_of_threads = atoi(argv[++i]);
     }
 
     char input[1024];
@@ -282,8 +283,8 @@ int main(int argc, char *argv[]) {
     sqlite3_close(db);
 
     // Launch worker threads
-    pthread_t threads[NUM_THREADS];
-    for (int i = 0; i < NUM_THREADS; i++) {
+    pthread_t threads[number_of_threads];
+    for (int i = 0; i < number_of_threads; i++) {
         pthread_create(&threads[i], NULL, worker, NULL);
     }
 
@@ -297,7 +298,7 @@ int main(int argc, char *argv[]) {
     pthread_mutex_unlock(&queue_mutex);
 
     // Join workers
-    for (int i = 0; i < NUM_THREADS; i++) {
+    for (int i = 0; i < number_of_threads; i++) {
         pthread_join(threads[i], NULL);
     }
 
