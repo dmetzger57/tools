@@ -16,53 +16,17 @@ file_tracker [-v] [-p path] [-d db_name]<br>
 * -d: Name of the database which will reside in \$HOME/db/FileTracker folder. The name will have '.db' added as a suffix.
 
 
-## find_file
+## find_locator
 
 Searches the specified (or all) file_tracker databases for a specific file (exact name match)
 
 ### Syntax
-find_file -f file_name [-d db_name]
+find_locator -f file_name [-d db_name] [-p] [-v]
 
-### Requirements
-
-Create a CLI tool to search for a specific file in the file_tracker database(s)
-
-The commad requires the following option:<br>
-* -f FileName<br>
-Where FileName is the name of the file being searched for
-
-The command optionally accepts the following option:<br>
-* -d DbName<br>
-Where DbName is the name of the file_tracker database to be searched. If the -d option is not provided the command will search all file_tracker databases.
-
-The file_tracker databases are stored in \${HOME}/db/FileTracker
-
-If a record exists in the database, dispay the record in human friendly format
-
-If a record does not exist in the database, display 'File Not Found' message
-
-The database schema wad created by: CREATE TABLE files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT);
-
-
-## report_files
-
-Display data regarding all the files recorded in the given file_tracker database
-
-### Syntax
-report_files -d db_name
-
-### Requirements
-Create a CLI tool to display information on all the files recorded in the file_tracker database
-
-The commad requires the following option:<br>
-* -d DbName<br>
-Where DbName is the name of the file_tracker database to be processed.
-
-The file_tracker databases are stored in \${HOME}/db/FileTracker
-
-Produce a report with 1 row per file printed in human friendly format
-
-The database schema wad created by: CREATE TABLE files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT);
+* -f file_name
+* -d database_name
+* -p Match partia file names
+* -v Verbose output
 
 ## weather_data
 
