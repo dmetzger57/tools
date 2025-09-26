@@ -1,16 +1,21 @@
+DRIVE=MediaArch-Clone-4
+
 # CheckSum="-c"
 CheckSum=""
-Drive="ext4tb01"
+
+SYSTEM=`uname -n | cut -d'.' -f1`
+if [ "${SYSTEM}" == "iMac" ]
+then
+	RSYNC="/usr/local/bin/rsync"
+else
+	RSYNC="rsync"
+fi
 
 echo "Syncing: CloudDocs"
-rsync -avL ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore "/Users/${USER}/Library/Mobile Documents/com~apple~CloudDocs" /Volumes/${Drive}
+${RSYNC} -avL ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore --info=progress3,stats "/Users/${USER}/Library/Mobile Documents/com~apple~CloudDocs" /Volumes/${DRIVE}
 
 echo "Syncing: PhotoArch"
-rsync -av ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore /Volumes/dockdata/PhotoArch /Volumes/${Drive}
-
-echo "Syncing: Pictures"
-rsync -av ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore /Users/${USER}/Pictures/Photos Library.photoslibrary /Volumes/${Drive}
+${RSYNC} -av ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore --info=progress3,stats /Volumes/dockdata/PhotoArch /Volumes/${DRIVE}
 
 echo "Syncing: VideArch"
-rsync -av ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore /Volumes/dockdata/VideoArch /Volumes/${Drive}
-
+${RSYNC} -av ${CheckSum} --delete --exclude-from=/Users/${USER}/.rsync-ignore --info=progress3,stats /Volumes/dockdata/VideoArch /Volumes/${DRIVE}
