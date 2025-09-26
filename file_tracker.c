@@ -134,6 +134,10 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
         const char *db_checksum = (const char *)sqlite3_column_text(stmt, 1);
 
         if (!verifyChecksum && db_mtime == st.st_mtime) {
+	    /**
+	     * DJM
+	     **/
+            printf("Unchanged: %s\n", path);
             pthread_mutex_lock(&count_mutex);
             unchangedCount++;
             pthread_mutex_unlock(&count_mutex);
@@ -141,6 +145,10 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
             char checksum[HASH_SIZE];
             compute_sha256(path, checksum);
             if (verifyChecksum && strcmp(checksum, db_checksum) == 0) {
+	        /**
+	         * DJM
+	         **/
+                printf("Unchanged: %s\n", path);
                 pthread_mutex_lock(&count_mutex);
                 unchangedCount++;
                 pthread_mutex_unlock(&count_mutex);
@@ -263,9 +271,9 @@ int main(int argc, char *argv[]) {
     }
 
     snprintf(global_db_path, sizeof(global_db_path),
-             "%s/Desktop/db/FileTracker/%s.db", getenv("HOME"), db_name);
+             "%s/db/FileTracker/%s.db", getenv("HOME"), db_name);
     char *mkdir_cmd;
-    asprintf(&mkdir_cmd, "mkdir -p %s/Desktop/db/FileTracker", getenv("HOME"));
+    asprintf(&mkdir_cmd, "mkdir -p %s/db/FileTracker", getenv("HOME"));
     system(mkdir_cmd);
     free(mkdir_cmd);
 
@@ -301,6 +309,11 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < number_of_threads; i++) {
         pthread_join(threads[i], NULL);
     }
+
+    /**
+     * DJM
+     **/
+    printf("Looking for missing files\n");
 
     // Handle missing files
     if (sqlite3_open(global_db_path, &db) == 0) {
