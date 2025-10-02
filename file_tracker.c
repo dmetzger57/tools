@@ -32,6 +32,7 @@ FileNode *queue_head = NULL, *queue_tail = NULL;
 int done_traversal = 0; // signals producer finished
 char global_db_path[1024];
 int verifyChecksum = 0;
+int verbose = 0;
 
 // ==== Queue functions ====
 void enqueue(const char *path, const char *name) {
@@ -134,21 +135,21 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
         const char *db_checksum = (const char *)sqlite3_column_text(stmt, 1);
 
         if (!verifyChecksum && db_mtime == st.st_mtime) {
-	    /**
-	     * DJM
-	     **/
-            printf("Unchanged: %s\n", path);
+            if (verbose == 1) {
+                printf("Unchanged: %s\n", path);
+	    }
             pthread_mutex_lock(&count_mutex);
             unchangedCount++;
             pthread_mutex_unlock(&count_mutex);
         } else {
             char checksum[HASH_SIZE];
-            compute_sha256(path, checksum);
+	    if( verifyChecksum) {
+            	compute_sha256(path, checksum);
+	    }
             if (verifyChecksum && strcmp(checksum, db_checksum) == 0) {
-	        /**
-	         * DJM
-	         **/
-                printf("Unchanged: %s\n", path);
+		if( verbose == 1 ) {
+                    printf("Unchanged: %s\n", path);
+		}
                 pthread_mutex_lock(&count_mutex);
                 unchangedCount++;
                 pthread_mutex_unlock(&count_mutex);
@@ -163,7 +164,9 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
                     sqlite3_step(update_stmt);
                     sqlite3_finalize(update_stmt);
                 }
-                printf("Changed: %s\n", path);
+		if (verbose == 1) {
+                    printf("Changed: %s\n", path);
+		}
                 pthread_mutex_lock(&count_mutex);
                 changedCount++;
                 pthread_mutex_unlock(&count_mutex);
@@ -190,7 +193,9 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
             sqlite3_step(insert_stmt);
             sqlite3_finalize(insert_stmt);
         }
-        printf("New: %s\n", path);
+	if (verbose == 1) {
+            printf("New: %s\n", path);
+	}
         pthread_mutex_lock(&count_mutex);
         newCount++;
         pthread_mutex_unlock(&count_mutex);
@@ -253,7 +258,8 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) path = argv[++i];
         else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) db_name = argv[++i];
-        else if (strcmp(argv[i], "-v") == 0) verifyChecksum = 1;
+        else if (strcmp(argv[i], "-c") == 0) verifyChecksum = 1;
+        else if (strcmp(argv[i], "-v") == 0) verbose = 1;
         else if (strcmp(argv[i], "-u") == 0) update = 1;
 	else if (strcmp(argv[i], "-t") == 0) number_of_threads = atoi(argv[++i]);
     }
@@ -310,10 +316,9 @@ int main(int argc, char *argv[]) {
         pthread_join(threads[i], NULL);
     }
 
-    /**
-     * DJM
-     **/
-    printf("Looking for missing files\n");
+    if (verbose == 1) {
+        printf("Looking for missing files\n");
+    }
 
     // Handle missing files
     if (sqlite3_open(global_db_path, &db) == 0) {
@@ -326,7 +331,9 @@ int main(int argc, char *argv[]) {
                 pthread_mutex_lock(&count_mutex);
                 missingCount++;
                 pthread_mutex_unlock(&count_mutex);
-                printf("Missing: %s\n", db_path);
+                if (verbose == 1) {
+                    printf("Missing: %s\n", db_path);
+		}
                 sqlite3_stmt *del_stmt;
                 sqlite3_prepare_v2(db, "DELETE FROM files WHERE full_path = ?", -1, &del_stmt, NULL);
                 sqlite3_bind_text(del_stmt, 1, db_path, -1, SQLITE_STATIC);
