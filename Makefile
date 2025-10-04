@@ -1,7 +1,9 @@
 # Makefile for file_tracker
+# make clean
 
 CC      = gcc
-CFLAGS  = -Wall -Wextra -O2
+CFLAGS  = -Wall -Wextra -O2 -I"/opt/homebrew/opt/openssl@3/include" 
+LDFLAGS = -L"/opt/homebrew/opt/openssl@3/lib"
 TARGET  = file_tracker
 SRC     = file_tracker.c
 
