@@ -16,7 +16,7 @@
 // ==== Globals ====
 int number_of_threads = 4;
 int update = 0;
-int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0;
+int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0, ignoredCount = 0;
 
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
@@ -121,86 +121,199 @@ void compute_sha256(const char *path, char *outputBuffer) {
 
 // ==== File processor ====
 void process_file(const char *path, const char *name, sqlite3 *db) {
+
+    int rc;
+
     struct stat st;
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return;
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT last_modified, checksum FROM files WHERE full_path = ?";
-    sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
 
-    int rc = sqlite3_step(stmt);
+    /*
+     * Does the file exist in the database
+     */
+
+    const char *sql = "SELECT last_modified, checksum FROM files WHERE full_path = ? LIMIT 1";
+    if( (rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) {
+	    fprintf(stderr,"process_file: sqlite3_prepare_v2 failed: rc=%d\n",rc);
+            return;
+    }
+
+    if( (rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC)) != SQLITE_OK) {
+	    fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+            return;
+    }
+
+    rc = sqlite3_step(stmt);
+
+    if( rc != SQLITE_ROW && rc != SQLITE_DONE ) {
+	    fprintf(stderr,"process_file: sqlite3_step failed: rc=%d\n",rc);
+            return;
+    }
+
     if (rc == SQLITE_ROW) {
+
+	/*
+	 * File exists in the database
+	 */
+
         time_t db_mtime = sqlite3_column_int64(stmt, 0);
         const char *db_checksum = (const char *)sqlite3_column_text(stmt, 1);
 
         if (!verifyChecksum && db_mtime == st.st_mtime) {
+
             if (verbose == 1) {
                 printf("Unchanged: %s\n", path);
 	    }
+
             pthread_mutex_lock(&count_mutex);
             unchangedCount++;
             pthread_mutex_unlock(&count_mutex);
+
         } else {
+
             char checksum[HASH_SIZE];
+
 	    if( verifyChecksum) {
             	compute_sha256(path, checksum);
 	    }
+
             if (verifyChecksum && strcmp(checksum, db_checksum) == 0) {
+
 		if( verbose == 1 ) {
                     printf("Unchanged: %s\n", path);
 		}
+
                 pthread_mutex_lock(&count_mutex);
                 unchangedCount++;
                 pthread_mutex_unlock(&count_mutex);
+
             } else {
+
                 if (update == 1) {
                     const char *update_sql = "UPDATE files SET checksum = ?, last_modified = ? WHERE full_path = ?";
                     sqlite3_stmt *update_stmt;
-                    sqlite3_prepare_v2(db, update_sql, -1, &update_stmt, NULL);
-                    sqlite3_bind_text(update_stmt, 1, checksum, -1, SQLITE_STATIC);
-                    sqlite3_bind_int64(update_stmt, 2, st.st_mtime);
-                    sqlite3_bind_text(update_stmt, 3, path, -1, SQLITE_STATIC);
-                    sqlite3_step(update_stmt);
+
+                    if( (rc = sqlite3_prepare_v2(db, update_sql, -1, &update_stmt, NULL)) != SQLITE_OK ) {
+	                fprintf(stderr,"process_file: sqlite3_prepare_v2 failed: rc=%d\n",rc);
+                        return;
+                    }
+
+                    if( (rc = sqlite3_bind_text(update_stmt, 1, checksum, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	                fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                        return;
+                    }
+
+                    if( (rc = sqlite3_bind_int64(update_stmt, 2, st.st_mtime)) != SQLITE_OK ) {
+	                fprintf(stderr,"process_file: sqlite3_bind_int64 failed: rc=%d\n",rc);
+                        return;
+                    }
+
+                    if( (rc = sqlite3_bind_text(update_stmt, 3, path, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	                fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                        return;
+                    }
+
+                    if( (rc = sqlite3_step(update_stmt)) != SQLITE_OK ) {
+	                fprintf(stderr,"process_file: sqlite3_step failed: rc=%d\n",rc);
+                        sqlite3_finalize(update_stmt);
+                        return;
+                    }
+
                     sqlite3_finalize(update_stmt);
                 }
+
 		if (verbose == 1) {
                     printf("Changed: %s\n", path);
 		}
+
                 pthread_mutex_lock(&count_mutex);
                 changedCount++;
                 pthread_mutex_unlock(&count_mutex);
             }
         }
     } else {
+
         char checksum[HASH_SIZE], owner[256];
+
         if (update == 1) {
+
             compute_sha256(path, checksum);
             get_owner(st.st_uid, owner, sizeof(owner));
 
             const char *insert_sql =
                 "INSERT INTO files (file_name, full_path, size, created, last_modified, owner, checksum) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
             sqlite3_stmt *insert_stmt;
-            sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL);
-            sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC);
-            sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC);
-            sqlite3_bind_int64(insert_stmt, 3, st.st_size);
-            sqlite3_bind_int64(insert_stmt, 4, st.st_ctime);
-            sqlite3_bind_int64(insert_stmt, 5, st.st_mtime);
-            sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC);
-            sqlite3_bind_text(insert_stmt, 7, checksum, -1, SQLITE_STATIC);
-            sqlite3_step(insert_stmt);
-            sqlite3_finalize(insert_stmt);
+
+            if( (rc = sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_prepare_v2 failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_int64(insert_stmt, 3, st.st_size)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_int64 failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_int64(insert_stmt, 4, st.st_ctime)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_int64 failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_int64(insert_stmt, 5, st.st_mtime)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_int64 failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( (rc = sqlite3_bind_text(insert_stmt, 7, checksum, -1, SQLITE_STATIC)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_bind_text failed: rc=%d\n",rc);
+                return;
+            }
+
+            if( sqlite3_step(insert_stmt) != SQLITE_DONE) {
+	        fprintf(stderr,"process_file: sqlite3_step failed: rc=%d\n",rc);
+		sqlite3_reset(insert_stmt);
+		sqlite3_finalize(insert_stmt);
+                return;
+            }
+
+            if( (rc = sqlite3_finalize(insert_stmt)) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_finalize failed: rc=%d\n",rc);
+                return;
+            }
+
         }
+
 	if (verbose == 1) {
             printf("New: %s\n", path);
 	}
+
         pthread_mutex_lock(&count_mutex);
         newCount++;
         pthread_mutex_unlock(&count_mutex);
     }
-    sqlite3_finalize(stmt);
+
+        if( sqlite3_finalize(stmt) != SQLITE_OK ) {
+	        fprintf(stderr,"process_file: sqlite3_finalize failed: rc=%d\n",rc);
+                return;
+        }
 }
 
 // ==== Directory traversal (producer) ====
@@ -225,6 +338,9 @@ void traverse_directory(const char *dir_path) {
                     strstr(full_path, ".localized") == NULL) {
                     enqueue(full_path, entry->d_name);
                 }
+		else {
+		    ignoredCount++;
+		}
             }
         }
     }
@@ -322,9 +438,11 @@ int main(int argc, char *argv[]) {
 
     // Handle missing files
     if (sqlite3_open(global_db_path, &db) == 0) {
+
         const char *missing_sql = "SELECT full_path FROM files";
         sqlite3_stmt *stmt;
         sqlite3_prepare_v2(db, missing_sql, -1, &stmt, NULL);
+
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             const char *db_path = (const char *)sqlite3_column_text(stmt, 0);
             if (access(db_path, F_OK) != 0) {
@@ -350,8 +468,8 @@ int main(int argc, char *argv[]) {
         sqlite3_finalize(stmt);
 
         printf("###\n");
-        printf("Unchanged: %d\nChanged: %d\nNew: %d\nMissing Files: %d\nTotal Records: %d\n",
-               unchangedCount, changedCount, newCount, missingCount, totalRecords);
+        printf("Unchanged: %d\nChanged: %d\nNew: %d\nMissing Files: %d\nIgnored Files: %d\nTotal Records: %d\n",
+               unchangedCount, changedCount, newCount, missingCount, ignoredCount, totalRecords);
 
         sqlite3_close(db);
     }
