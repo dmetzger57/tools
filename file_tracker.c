@@ -408,7 +408,7 @@ int main(int argc, char *argv[]) {
     const char *create_sql =
         "CREATE TABLE IF NOT EXISTS files ("
         "id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, "
-        "created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT);";
+        "created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT, keywords TEXT);";
     sqlite3_exec(db, create_sql, 0, 0, 0);
     sqlite3_close(db);
 
