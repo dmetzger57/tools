@@ -17,7 +17,7 @@
 int number_of_threads = 4;
 int update = 0;
 int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0,
-    ignoredCount = 0;
+    ignoredCount = 0, errorCount = 0;
 
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
@@ -140,22 +140,30 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
 
   const char *sql =
       "SELECT last_modified, checksum FROM files WHERE full_path = ? LIMIT 1";
-  if ((rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL)) != SQLITE_OK) {
-    fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d\n", rc);
+
+  rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d, name=[%s], path=[%s]\n", rc, name, path); ++errorCount;
+    pause(); /* TODO Enhance Error Handling */
     return;
   }
 
-  if ((rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC)) != SQLITE_OK) {
-    fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+  rc = sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
+  if (rc != SQLITE_OK) {
+
+    fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d, name=[%s], path=[%s]\n", rc, name, path);
+
+    rc = sqlite3_finalize(stmt);
+    if (rc != SQLITE_OK) {
+      fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+    }
+
+    ++errorCount;
+    pause(); /* TODO Enhance Error Handling */
     return;
   }
 
   rc = sqlite3_step(stmt);
-
-  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
-    fprintf(stderr, "process_file: sqlite3_step failed: rc=%d\n", rc);
-    return;
-  }
 
   if (rc == SQLITE_ROW) {
 
@@ -201,24 +209,48 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
                                    "last_modified = ? WHERE full_path = ?";
           sqlite3_stmt *update_stmt;
 
-          if ((rc = sqlite3_prepare_v2(db, update_sql, -1, &update_stmt,
-                                       NULL)) != SQLITE_OK) {
-            fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d\n",
-                    rc);
+          rc = sqlite3_prepare_v2(db, update_sql, -1, &update_stmt, NULL);
+          if (rc != SQLITE_OK) {
+
+            fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d\n", rc);
+
+            rc = sqlite3_finalize(update_stmt);
+            if (rc != SQLITE_OK) {
+              fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+            }
+
+            ++errorCount;
+            pause(); /* TODO Enhance Error Handling */
+            return;
+	  }
+
+          rc = sqlite3_bind_text(update_stmt, 1, checksum, -1, SQLITE_STATIC);
+          if (rc != SQLITE_OK) {
+
+            fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+
+            rc = sqlite3_finalize(update_stmt);
+            if (rc != SQLITE_OK) {
+              fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+            }
+
+            ++errorCount;
+            pause(); /* TODO Enhance Error Handling */
             return;
           }
 
-          if ((rc = sqlite3_bind_text(update_stmt, 1, checksum, -1,
-                                      SQLITE_STATIC)) != SQLITE_OK) {
-            fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n",
-                    rc);
-            return;
-          }
+          rc = sqlite3_bind_int64(update_stmt, 2, st.st_mtime);
+          if (rc != SQLITE_OK) {
 
-          if ((rc = sqlite3_bind_int64(update_stmt, 2, st.st_mtime)) !=
-              SQLITE_OK) {
-            fprintf(stderr, "process_file: sqlite3_bind_int64 failed: rc=%d\n",
-                    rc);
+            fprintf(stderr, "process_file: sqlite3_bind_int64 failed: rc=%d\n", rc);
+
+            rc = sqlite3_finalize(update_stmt);
+            if (rc != SQLITE_OK) {
+              fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+            }
+
+            ++errorCount;
+            pause(); /* TODO Enhance Error Handling */
             return;
           }
 
@@ -226,16 +258,27 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
                                       SQLITE_STATIC)) != SQLITE_OK) {
             fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n",
                     rc);
+            if ((rc = sqlite3_finalize(update_stmt)) != SQLITE_OK) {
+              fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+            }
+            ++errorCount;
+            pause(); /* TODO Enhance Error Handling */
             return;
           }
 
           if ((rc = sqlite3_step(update_stmt)) != SQLITE_OK) {
-            fprintf(stderr, "process_file: sqlite3_step failed: rc=%d\n", rc);
-            sqlite3_finalize(update_stmt);
+            fprintf(stderr, "process_file: sqlite3_step failed @ %d: UPDATE: rc=%d, name=[%s], path=[%s]\n", __LINE__, rc, name, path);
+            if ((rc = sqlite3_finalize(update_stmt)) != SQLITE_OK) {
+              fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+            }
+            ++errorCount;
+            pause(); /* TODO Enhance Error Handling */
             return;
           }
 
-          sqlite3_finalize(update_stmt);
+          if ((rc = sqlite3_finalize(update_stmt)) != SQLITE_OK) {
+            fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+          }
         }
 
         if (verbose == 1) {
@@ -247,7 +290,11 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
         pthread_mutex_unlock(&count_mutex);
       }
     }
-  } else {
+  } else if( rc == SQLITE_DONE ) {
+
+    if (verbose == 1) {
+      printf("New: %s\n", path);
+    }
 
     char checksum[HASH_SIZE], owner[256];
 
@@ -262,95 +309,193 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
 
       sqlite3_stmt *insert_stmt;
 
-      if ((rc = sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL)) !=
-          SQLITE_OK) {
+      rc = sqlite3_prepare_v2(db, insert_sql, -1, &insert_stmt, NULL);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC)) !=
-          SQLITE_OK) {
+      rc = sqlite3_bind_text(insert_stmt, 1, name, -1, SQLITE_STATIC);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC)) !=
-          SQLITE_OK) {
+      rc = sqlite3_bind_text(insert_stmt, 2, path, -1, SQLITE_STATIC);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_int64(insert_stmt, 3, st.st_size)) != SQLITE_OK) {
+      rc = sqlite3_bind_int64(insert_stmt, 3, st.st_size);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_int64 failed: rc=%d\n", rc);
+        rc = sqlite3_finalize(insert_stmt);
+
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_int64(insert_stmt, 4, st.st_ctime)) != SQLITE_OK) {
+      rc = sqlite3_bind_int64(insert_stmt, 4, st.st_ctime);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_int64 failed: rc=%d\n", rc);
+        if ((rc = sqlite3_finalize(insert_stmt)) != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_int64(insert_stmt, 5, st.st_mtime)) != SQLITE_OK) {
+      rc = sqlite3_bind_int64(insert_stmt, 5, st.st_mtime);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_int64 failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC)) !=
-          SQLITE_OK) {
+      rc = sqlite3_bind_text(insert_stmt, 6, owner, -1, SQLITE_STATIC);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if ((rc = sqlite3_bind_text(insert_stmt, 7, checksum, -1,
-                                  SQLITE_STATIC)) != SQLITE_OK) {
+      rc = sqlite3_bind_text(insert_stmt, 7, checksum, -1, SQLITE_STATIC);
+      if (rc != SQLITE_OK) {
+
         fprintf(stderr, "process_file: sqlite3_bind_text failed: rc=%d\n", rc);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
 
-      if (sqlite3_step(insert_stmt) != SQLITE_DONE) {
-        fprintf(stderr, "process_file: sqlite3_step failed: rc=%d\n", rc);
-        sqlite3_reset(insert_stmt);
-        sqlite3_finalize(insert_stmt);
-        return;
+      rc = sqlite3_step(insert_stmt);
+      if (rc != SQLITE_DONE && rc != SQLITE_OK) {
+
+        fprintf(stderr, "process_file: sqlite3_step failed @ %d: INSERT: rc=%d, name=[%s], path=[%s]\n", __LINE__, rc, name, path);
+
+        rc = sqlite3_finalize(insert_stmt);
+        if (rc != SQLITE_OK) {
+          fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+        }
+
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
+	return;
       }
 
-      if ((rc = sqlite3_finalize(insert_stmt)) != SQLITE_OK) {
+      rc = sqlite3_finalize(insert_stmt);
+      if (rc != SQLITE_OK) {
         fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+	++errorCount;
+        pause(); /* TODO Enhance Error Handling */
         return;
       }
-    }
-
-    if (verbose == 1) {
-      printf("New: %s\n", path);
     }
 
     pthread_mutex_lock(&count_mutex);
     newCount++;
     pthread_mutex_unlock(&count_mutex);
   }
+  else {
+    /* There was an error */
+    fprintf(stderr, "process_file: sqlite3_step failed SELECTING rc=%d, name=[%s], path=[%s]\n", rc, name, path);
+    ++errorCount;
+    pause(); /* TODO Enhance Error Handling */
+    exit( 1 );
+  }
 
   if (sqlite3_finalize(stmt) != SQLITE_OK) {
     fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
+    ++errorCount;
+    pause(); /* TODO Enhance Error Handling */
     return;
   }
+
+  return;
 }
 
 // ==== Directory traversal (producer) ====
 void traverse_directory(const char *dir_path) {
   DIR *dir = opendir(dir_path);
+
   if (!dir)
     return;
+
   struct dirent *entry;
+
   while ((entry = readdir(dir))) {
+
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
       continue;
+
     char full_path[MAX_PATH];
-    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
     struct stat st;
+    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
     if (stat(full_path, &st) == 0) {
+
       if (S_ISDIR(st.st_mode)) {
         traverse_directory(full_path);
-      } else {
+      }
+      else {
         if (strstr(full_path, ".DS_Store") == NULL &&
             strstr(full_path, ".Trashes") == NULL &&
             strstr(full_path, ".Trash") == NULL &&
@@ -371,9 +516,16 @@ void traverse_directory(const char *dir_path) {
 // void *worker(void *arg) {
 void *worker() {
   sqlite3 *db;
-  if (sqlite3_open(global_db_path, &db)) {
+  if (sqlite3_open(global_db_path, &db) != SQLITE_OK) {
     fprintf(stderr, "Worker can't open DB: %s\n", sqlite3_errmsg(db));
     return NULL;
+  }
+
+  int rc = sqlite3_busy_timeout(db, 10000);
+  if (rc != SQLITE_OK) {
+    fprintf(stderr,"Unable to set BUSY TimeOut\n");
+    exit(1);
+    /* TODO add error handing and recovery */
   }
 
   while (1) {
@@ -391,6 +543,8 @@ void *worker() {
 // ==== Main ====
 int main(int argc, char *argv[]) {
   char *path = NULL, *db_name = NULL;
+
+  int rc;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
@@ -493,15 +647,18 @@ int main(int argc, char *argv[]) {
     // Total records
     int totalRecords = 0;
     sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM files", -1, &stmt, NULL);
-    if (sqlite3_step(stmt) == SQLITE_ROW)
+    if ((rc = sqlite3_step(stmt) == SQLITE_ROW) || rc == SQLITE_OK)
       totalRecords = sqlite3_column_int(stmt, 0);
     sqlite3_finalize(stmt);
 
     printf("###\n");
-    printf("Unchanged: %d\nChanged: %d\nNew: %d\nMissing Files: %d\nIgnored "
-           "Files: %d\nTotal Records: %d\n",
-           unchangedCount, changedCount, newCount, missingCount, ignoredCount,
-           totalRecords);
+    printf("Unchanged: ...... %d\n",unchangedCount);
+    printf("Changed: ........ %d\n",changedCount);
+    printf("New: ............ %d\n",newCount);
+    printf("Ignored: ........ %d\n",ignoredCount);
+    printf("Missing Files: .. %d\n",missingCount);
+    printf("Total Errors .... %d\n",errorCount);
+    printf("Total Records: .. %d\n",totalRecords);
 
     sqlite3_close(db);
   }
