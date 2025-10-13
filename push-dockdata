@@ -1,1 +1,0 @@
-rsync -av --rsync-path=/usr/local/bin/rsync --exclude-from=/Users/dmetzger/.rsync-ignore --info=progress3,stats /Volumes/dockdata/com~apple~CloudDocs /Volumes/dockdata/PhotoArch /Volumes/dockdata/VideoArch dennis@imac:/Volumes/dockdata
