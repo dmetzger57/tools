@@ -4,8 +4,6 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -I"/opt/homebrew/opt/openssl@3/include" 
 LDFLAGS = -L"/opt/homebrew/opt/openssl@3/lib"
-TARGET  = file_tracker
-SRC     = file_tracker.c
 
 # Try to get OpenSSL/SQLite flags from pkg-config if available
 PKG_CONFIG ?= pkg-config
@@ -36,9 +34,12 @@ endif
 LIBS    = -lpthread $(SQLITE_LIBS) $(SSL_LIBS)
 CFLAGS += $(SSL_CFLAGS) $(SQLITE_CFLAGS)
 
-all: $(TARGET)
+# all: $(TARGET)
 
-$(TARGET): $(SRC)
+file_tracker: file_tracker.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
+file_locator: file_locator.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 clean:
