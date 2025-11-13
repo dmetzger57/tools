@@ -5,7 +5,13 @@
 SOURCE_DIR="${HOME}/Documents"
 
 # The master directory where all backups will be stored
-BACKUP_ROOT="/Volumes/backups/DocBackups"
+BACKUP_ROOT="/Volumes/backups"
+if mount | grep -q "${BACKUP_ROOT}"; then
+    BACKUP_ROOT="${BACKUP_ROOT}/Documents"
+else
+    echo "❌ Archive drive is NOT mounted."
+    exit 1
+fi
 
 # --- Directory and File Names ---
 BASE_DIR="$BACKUP_ROOT/Base"

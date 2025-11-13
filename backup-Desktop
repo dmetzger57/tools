@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# --- Configuration ---
+# Source directory to be backed up (e.g., your Documents folder)
+SOURCE_DIR="${HOME}/Desktop"
+
+# The master directory where all backups will be stored
+BACKUP_ROOT="/Volumes/backups"
+if mount | grep -q "${BACKUP_ROOT}"; then
+    BACKUP_ROOT="${BACKUP_ROOT}/Desktop"
+else
+    echo "❌ Archive drive is NOT mounted."
+    exit 1
+fi
+
+# --- Directory and File Names ---
+BASE_DIR="$BACKUP_ROOT/Base"
+DATE_STAMP=$(date +%Y-%m-%d_%H%M%S)
+INCREMENTAL_DIR="$BACKUP_ROOT/${DATE_STAMP}_Incremental"
+
+# --- Setup and Execution ---
+
+echo "Starting Incremental Backup with Deletion Synchronization..."
+echo "Source: $SOURCE_DIR"
+echo "Root Destination: $BACKUP_ROOT"
+echo "--------------------------------------------------"
+
+# 1. Create the root backup directory if it doesn't exist
+mkdir -p "$BACKUP_ROOT"
+
+# 2. Check for the existence of the 'Base' directory
+if [ ! -d "$BASE_DIR" ]; then
+    # --- FIRST RUN: Perform a Full Base Backup ---
+    echo "Base backup directory not found."
+    echo "Performing a FULL backup to: $BASE_DIR"
+
+    # The --delete flag is included here for the initial full copy
+    rsync -avh --delete "$SOURCE_DIR/" "$BASE_DIR/"
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Initial Full Base Backup complete."
+    else
+        echo "❌ ERROR: Full Base Backup failed. Check rsync logs."
+        exit 1
+    fi
+
+else
+    # --- SUBSEQUENT RUNS: Synchronize Base and Create Incremental Backup ---
+
+    echo "Synchronizing Base directory for deletions..."
+    # A. SYNCHRONIZE BASE DIR: Update Base with changes (new files, modified files, AND DELETIONS)
+    # This step is crucial. It ensures the Base backup reflects the current source state.
+    rsync -avh --delete "$SOURCE_DIR/" "$BASE_DIR/"
+
+    if [ $? -ne 0 ]; then
+        echo "❌ ERROR: Base directory synchronization failed. Cannot proceed with incremental."
+        exit 1
+    fi
+    echo "Base directory is now synchronized with source deletions."
+
+    # B. CREATE INCREMENTAL BACKUP
+    # Since the Base directory is the most up-to-date mirror, we use it as the link-dest.
+    LAST_BACKUP_PATH="$BASE_DIR"
+
+    echo "Performing INCREMENTAL backup to: $INCREMENTAL_DIR"
+
+    # Create the new incremental directory
+    mkdir "$INCREMENTAL_DIR"
+
+    # rsync flags:
+    # --link-dest: links to unchanged files in the synchronized Base directory ($BASE_DIR)
+    # --delete: removes files from the Incremental backup that were deleted from the source/Base (though often redundant here, it ensures consistency)
+    rsync -avh --delete --link-dest="$LAST_BACKUP_PATH" "$SOURCE_DIR/" "$INCREMENTAL_DIR/"
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Incremental Backup complete to $INCREMENTAL_DIR"
+    else
+        echo "❌ ERROR: Incremental Backup failed. Check rsync logs."
+        exit 1
+    fi
+fi
+
+echo "--------------------------------------------------"
+echo "Backup process finished."
