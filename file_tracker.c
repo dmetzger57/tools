@@ -545,6 +545,7 @@ int main(int argc, char *argv[]) {
   char *path = NULL, *db_name = NULL;
 
   int rc;
+  int help_requested = 0;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
@@ -559,22 +560,43 @@ int main(int argc, char *argv[]) {
       update = 1;
     else if (strcmp(argv[i], "-t") == 0)
       number_of_threads = atoi(argv[++i]);
+    else if (strcmp(argv[i], "-h") == 0)
+	    help_requested = 1;
   }
 
-  char input[1024];
+  if (help_requested == 1 ) {
+      printf("usage: file_tracker -c -d <DB_Name> -p <Path_to_Search> -t <Number_of_Threads> [-u] [-v]\n");
+      printf("       -c: Compare by calculating file checksum, without -c last modified time is compared\n");
+      printf("       -d: Name of the database file to be used\n");
+      printf("           The database file is located in ${HOME}/db/file_tracker\n");
+      printf("       -p: Full path name to to processed\n");
+      printf("       -t: Number of threads to use for processing - default 4\n");
+      printf("       -u: Update the database (new/modified/delete), without the -n file_tracker will only\n");
+      printf("           report this information but not update the database\n");
+      printf("       -v: Verbose output\n");
+      exit(0);
+  }
+
   if (!path) {
-    printf("Enter path to scan: ");
-    fgets(input, sizeof(input), stdin);
-    path = strtok(input, "\n");
-  }
-  if (!db_name) {
-    printf("Enter database name: ");
-    fgets(input, sizeof(input), stdin);
-    db_name = strtok(input, "\n");
+    printf("Missing path to process\n");
+    exit(1);
   }
 
-  snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db",
-           getenv("HOME"), db_name);
+  if (!db_name) {
+    printf("Missing database name\n");
+    exit(2);
+  }
+
+  if (strncmp(global_db_path, "./", 2) != 0) {
+    strcpy(global_db_path,db_name);
+    printf("Local DB: %s\n",global_db_path);
+  }
+  else {
+    snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db", getenv("HOME"), db_name);
+    printf("Shared DB: %s\n",global_db_path);
+  }
+  exit(0);
+
   char *mkdir_cmd;
   asprintf(&mkdir_cmd, "mkdir -p %s/db/FileTracker", getenv("HOME"));
   system(mkdir_cmd);
