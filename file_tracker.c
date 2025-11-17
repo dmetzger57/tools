@@ -587,15 +587,13 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 
-  if (strncmp(global_db_path, "./", 2) != 0) {
+  if(db_name[0] == '.' && db_name[1] == '/') {
     strcpy(global_db_path,db_name);
-    printf("Local DB: %s\n",global_db_path);
+    snprintf(global_db_path, sizeof(global_db_path), "%s.db", db_name);
   }
   else {
     snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db", getenv("HOME"), db_name);
-    printf("Shared DB: %s\n",global_db_path);
   }
-  exit(0);
 
   char *mkdir_cmd;
   asprintf(&mkdir_cmd, "mkdir -p %s/db/FileTracker", getenv("HOME"));
