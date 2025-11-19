@@ -542,9 +542,7 @@ void *worker() {
 
 // ==== Main ====
 int main(int argc, char *argv[]) {
-  char *path = NULL;
-  char db_name[256];
-  db_name[0] = '\0';
+  char *path = NULL, *db_name = NULL;
 
   int rc;
   int help_requested = 0;
@@ -553,7 +551,7 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
       path = argv[++i];
     else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc)
-      sprintf(db_name, "%s.db", argv[++i]);
+      db_name = argv[++i];
     else if (strcmp(argv[i], "-c") == 0)
       verifyChecksum = 1;
     else if (strcmp(argv[i], "-v") == 0)
@@ -584,7 +582,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  if (db_name[0] == '\0') {
+  if (!db_name) {
     printf("Missing database name\n");
     exit(2);
   }
