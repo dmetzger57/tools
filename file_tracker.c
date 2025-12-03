@@ -612,6 +612,12 @@ int main(int argc, char *argv[]) {
                            "created INTEGER, last_modified INTEGER, owner "
                            "TEXT, checksum TEXT, keywords TEXT);";
   sqlite3_exec(db, create_sql, 0, 0, 0);
+  const char *meta_sql =
+    "CREATE TABLE IF NOT EXISTS metadata ("
+    "   key TEXT PRIMARY KEY,"
+    "   value TEXT"
+    ");";
+  sqlite3_exec(db, meta_sql, 0, 0, NULL);
   sqlite3_close(db);
 
   // Launch worker threads
@@ -663,6 +669,25 @@ int main(int argc, char *argv[]) {
       }
     }
     sqlite3_finalize(stmt);
+
+    if (update == 1) {
+      time_t now = time(NULL);
+      struct tm t;
+      char buf[64];
+
+      localtime_r(&now, &t);
+      strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &t);
+
+      const char *up_sql =
+          "INSERT INTO metadata(key, value) VALUES('last_run', ?) "
+          "ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
+
+      sqlite3_stmt *stmt;
+      sqlite3_prepare_v2(db, up_sql, -1, &stmt, NULL);
+      sqlite3_bind_text(stmt, 1, buf, -1, SQLITE_TRANSIENT);
+      sqlite3_step(stmt);
+      sqlite3_finalize(stmt);
+    }
 
     // Total records
     int totalRecords = 0;
