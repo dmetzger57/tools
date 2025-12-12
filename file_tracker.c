@@ -587,12 +587,15 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 
-  if(db_name[0] == '.' && db_name[1] == '/') {
-    strcpy(global_db_path,db_name);
-    snprintf(global_db_path, sizeof(global_db_path), "%s.db", db_name);
+  /* DB Name Suffix Handling */
+  const char *suffix = ".db";
+  size_t path_len = strlen(db_name);
+  size_t suffix_len = strlen(suffix);
+  if ((path_len > suffix_len) && (strcmp(db_name + path_len - suffix_len, suffix) != 0)) {
+    snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db", getenv("HOME"), db_name);
   }
   else {
-    snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db", getenv("HOME"), db_name);
+    snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s", getenv("HOME"), db_name);
   }
 
   char *mkdir_cmd;
