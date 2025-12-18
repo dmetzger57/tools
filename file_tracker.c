@@ -266,7 +266,8 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
             return;
           }
 
-          if ((rc = sqlite3_step(update_stmt)) != SQLITE_OK) {
+          rc = sqlite3_step(update_stmt);
+          if (rc != SQLITE_OK || rc != SQLITE_DONE) {
             fprintf(stderr, "process_file: sqlite3_step failed @ %d: UPDATE: rc=%d, name=[%s], path=[%s]\n", __LINE__, rc, name, path);
             if ((rc = sqlite3_finalize(update_stmt)) != SQLITE_OK) {
               fprintf(stderr, "process_file: sqlite3_finalize failed: rc=%d\n", rc);
