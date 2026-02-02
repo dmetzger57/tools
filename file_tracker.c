@@ -333,8 +333,6 @@ int main(int argc, char *argv[]) {
 
   for (int i = 0; i < number_of_threads; i++) pthread_join(threads[i], NULL);
 
-  log_message("Looking for missing files\n");
-
   if (sqlite3_open(global_db_path, &db) == 0) {
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, "SELECT full_path FROM files", -1, &stmt, NULL);
