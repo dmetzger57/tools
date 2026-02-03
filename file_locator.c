@@ -119,9 +119,9 @@ void search_database(const char *dbname, const char *db_path, const char *filena
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
 	++found_count;
 
-if( Checksum[0] == '\0' ) {
-	strcpy( Checksum, (char *)sqlite3_column_text(stmt, 7));
-}
+        if( Checksum[0] == '\0' ) {
+            strcpy( Checksum, (char *)sqlite3_column_text(stmt, 7));
+        }
 
 	if ( verbose == 1 ) {
             printf("Database: %s\n", dbname);
@@ -135,7 +135,7 @@ if( Checksum[0] == '\0' ) {
 	}
 	else {
             if( strcmp( Checksum, (char *)sqlite3_column_text(stmt, 7) ) != 0 ) {
-                printf("%24.24s, Checksum Mismatch\n", dbname);
+                printf("%24.24s, %s, Checksum Mismatch\n", dbname, sqlite3_column_text(stmt, 2));
             }
             else {
                 printf("%24.24s, %s\n", dbname, sqlite3_column_text(stmt, 2));
