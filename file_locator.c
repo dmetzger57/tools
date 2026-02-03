@@ -14,6 +14,8 @@
 int verbose = 0;
 int found_count = 0;
 
+char Checksum[128];
+
 // Forward declarations
 void search_database(const char *dbname, const char *db_path, const char *filename, int partial);
 void list_databases_and_search(const char *dir_path, const char *filename, int partial);
@@ -33,8 +35,11 @@ int main(int argc, char *argv[]) {
             dbname = argv[++i];
 	} else if (strcmp(argv[i], "-v") == 0 && i + 1 < argc) {
             verbose = 1;
+	} else if (strcmp(argv[i], "-h") == 0 && i + 1 < argc) {
+            fprintf(stderr, "Usage: %s -v -f FileName [-p] [-d DbName]\n", argv[0]);
+            return 1;
         } else {
-            fprintf(stderr, "Usage: %s -f FileName [-p] [-d DbName]\n", argv[0]);
+            fprintf(stderr, "Usage: %s -v -f FileName [-p] [-d DbName]\n", argv[0]);
             return 1;
         }
     }
@@ -43,6 +48,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: -f FileName is required\n");
         return 1;
     }
+
+    memset(Checksum, 0, sizeof(Checksum));
 
     const char *home = getenv("HOME");
     if (!home) {
@@ -111,20 +118,29 @@ void search_database(const char *dbname, const char *db_path, const char *filena
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
 	++found_count;
+
+if( Checksum[0] == '\0' ) {
+	strcpy( Checksum, (char *)sqlite3_column_text(stmt, 7));
+}
+
 	if ( verbose == 1 ) {
             printf("Database: %s\n", dbname);
-            printf("ID: %d\n", sqlite3_column_int(stmt, 0));
-            printf("File Name: %s\n", sqlite3_column_text(stmt, 1));
-            printf("Full Path: %s\n", sqlite3_column_text(stmt, 2));
-            printf("Size: %lld bytes\n", sqlite3_column_int64(stmt, 3));
-            printf("Created: %lld\n", sqlite3_column_int64(stmt, 4));
-            printf("Last Modified: %lld\n", sqlite3_column_int64(stmt, 5));
-            printf("Owner: %s\n", sqlite3_column_text(stmt, 6));
-            printf("Checksum: %s\n\n", sqlite3_column_text(stmt, 7));
+            printf("    ID: %d\n", sqlite3_column_int(stmt, 0));
+            printf("    Full Path: %s\n", sqlite3_column_text(stmt, 2));
+            printf("    Size: %lld bytes\n", sqlite3_column_int64(stmt, 3));
+            printf("    Created: %lld\n", sqlite3_column_int64(stmt, 4));
+            printf("    Last Modified: %lld\n", sqlite3_column_int64(stmt, 5));
+            printf("    Owner: %s\n", sqlite3_column_text(stmt, 6));
+            printf("    Checksum: %s\n\n", sqlite3_column_text(stmt, 7));
 	}
 	else {
-            printf("%s\n", sqlite3_column_text(stmt, 2));
-	}
+            if( strcmp( Checksum, (char *)sqlite3_column_text(stmt, 7) ) != 0 ) {
+                printf("%24.24s, Checksum Mismatch\n", dbname);
+            }
+            else {
+                printf("%24.24s, %s\n", dbname, sqlite3_column_text(stmt, 2));
+	    }
+        }
     }
 
     sqlite3_finalize(stmt);
