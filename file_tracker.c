@@ -35,28 +35,19 @@ FileNode *queue_head = NULL, *queue_tail = NULL;
 int done_traversal = 0;
 char global_db_path[1024];
 int verifyChecksum = 0;
-int verbose = 0;
-int use_logging = 0;
 FILE *log_fp = NULL;
 
-void log_message(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    if (verbose) {
-        va_list args_stdout;
-        va_copy(args_stdout, args);
-        vprintf(format, args_stdout);
-        va_end(args_stdout);
-    }
-    if (use_logging && log_fp) {
+// ==== Logging Helper ====
+void log_message(const char *status, const char *path) {
+    if (log_fp) {
         pthread_mutex_lock(&log_mutex);
-        vfprintf(log_fp, format, args);
+        fprintf(log_fp, "[%-18s] %s\n", status, path);
         fflush(log_fp);
         pthread_mutex_unlock(&log_mutex);
     }
-    va_end(args);
 }
 
+// ==== Queue functions ====
 void enqueue(const char *path, const char *name) {
   FileNode *node = malloc(sizeof(FileNode));
   strncpy(node->path, path, MAX_PATH);
@@ -115,16 +106,24 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
   if (rc == SQLITE_ROW) {
     time_t db_mtime = sqlite3_column_int64(stmt, 0);
     const char *db_checksum = (const char *)sqlite3_column_text(stmt, 1);
-    if (!verifyChecksum && db_mtime == st.st_mtime) {
-      log_message("Unchanged: %s\n", path);
+
+    int mtime_match = (db_mtime == st.st_mtime);
+
+    if (!verifyChecksum && mtime_match) {
+      log_message("UNCHANGED", path);
       pthread_mutex_lock(&count_mutex); unchangedCount++; pthread_mutex_unlock(&count_mutex);
     } else {
       char checksum[HASH_SIZE];
-      if (verifyChecksum) compute_sha256(path, checksum);
-      if (verifyChecksum && strcmp(checksum, db_checksum) == 0) {
-        log_message("Unchanged: %s\n", path);
+      compute_sha256(path, checksum);
+      int checksum_match = (strcmp(checksum, db_checksum) == 0);
+
+      if (verifyChecksum && checksum_match) {
+        log_message("UNCHANGED", path);
         pthread_mutex_lock(&count_mutex); unchangedCount++; pthread_mutex_unlock(&count_mutex);
       } else {
+        const char *reason = (!mtime_match) ? "CHANGED (Metadata)" : "CHANGED (Checksum)";
+        log_message(reason, path);
+
         if (update) {
           sqlite3_stmt *up_stmt;
           sqlite3_prepare_v2(db, "UPDATE files SET checksum = ?, last_modified = ? WHERE full_path = ?", -1, &up_stmt, NULL);
@@ -133,12 +132,11 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
           sqlite3_bind_text(up_stmt, 3, path, -1, SQLITE_STATIC);
           sqlite3_step(up_stmt); sqlite3_finalize(up_stmt);
         }
-        log_message("Changed: %s\n", path);
         pthread_mutex_lock(&count_mutex); changedCount++; pthread_mutex_unlock(&count_mutex);
       }
     }
   } else {
-    log_message("New: %s\n", path);
+    log_message("NEW", path);
     if (update) {
       char checksum[HASH_SIZE], owner[256];
       compute_sha256(path, checksum);
@@ -202,6 +200,21 @@ int main(int argc, char *argv[]) {
   if (!path || !db_name) exit(1);
 
   const char *home = getenv("HOME");
+
+  // Create $HOME/logs/file_tracker
+  char log_dir[MAX_PATH], log_path[MAX_PATH], mkdir_cmd[MAX_PATH];
+  snprintf(log_dir, sizeof(log_dir), "%s/logs/file_tracker", home);
+  snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", log_dir);
+  system(mkdir_cmd);
+
+  // File Name: dbName-YYYY-MM-DD-HH-MM-SS.log
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  char timestamp[64];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", t);
+  snprintf(log_path, sizeof(log_path), "%s/%s-%s.log", log_dir, db_name, timestamp);
+  log_fp = fopen(log_path, "w");
+
   snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s.db", home, db_name);
 
   sqlite3 *db;
@@ -209,7 +222,6 @@ int main(int argc, char *argv[]) {
   sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT, keywords TEXT);", 0, 0, 0);
   sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY AUTOINCREMENT, last_checksum_verify_date TEXT, last_date_verify TEXT, verify_machine TEXT, num_unchanged INTEGER, num_changed INTEGER, num_new INTEGER, num_missing INTEGER, num_errors INTEGER);", 0, 0, 0);
 
-  // Fetch previous run stats before scanning
   int pU = 0, pC = 0, pN = 0, pM = 0, pE = 0;
   char pDate[64] = "None";
   sqlite3_stmt *pStmt;
@@ -230,7 +242,6 @@ int main(int argc, char *argv[]) {
   pthread_mutex_lock(&queue_mutex); done_traversal = 1; pthread_cond_broadcast(&queue_cond); pthread_mutex_unlock(&queue_mutex);
   for (int i = 0; i < number_of_threads; i++) pthread_join(threads[i], NULL);
 
-  // Handle missing files and final meta insert
   sqlite3_open(global_db_path, &db);
   sqlite3_stmt *mStmt;
   sqlite3_prepare_v2(db, "SELECT full_path FROM files", -1, &mStmt, NULL);
@@ -238,6 +249,7 @@ int main(int argc, char *argv[]) {
     const char *dp = (const char *)sqlite3_column_text(mStmt, 0);
     if (access(dp, F_OK) != 0) {
       missingCount++;
+      log_message("MISSING", dp);
       sqlite3_stmt *dStmt;
       sqlite3_prepare_v2(db, "DELETE FROM files WHERE full_path = ?", -1, &dStmt, NULL);
       sqlite3_bind_text(dStmt, 1, dp, -1, SQLITE_STATIC);
@@ -258,7 +270,8 @@ int main(int argc, char *argv[]) {
   sqlite3_step(insMeta); sqlite3_finalize(insMeta); free(sql);
   sqlite3_close(db);
 
-  // Final Summary Comparison Output
+  if (log_fp) fclose(log_fp);
+
   printf("\n================ RUN SUMMARY ================\n");
   printf("Statistic      | Previous (%-10s) | Current\n", pDate);
   printf("---------------|----------------------|----------\n");
@@ -268,6 +281,7 @@ int main(int argc, char *argv[]) {
   printf("Missing        | %-20d | %d\n", pM, missingCount);
   printf("Errors         | %-20d | %d\n", pE, errorCount);
   printf("=============================================\n");
+  printf("Detailed log created: %s\n", log_path);
 
   return 0;
 }
