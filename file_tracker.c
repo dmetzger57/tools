@@ -15,6 +15,7 @@
 #define MAX_PATH 4096
 
 // ==== Globals ====
+int verbose = 0;
 int number_of_threads = 4;
 int update = 0;
 int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0,
@@ -44,6 +45,9 @@ void log_message(const char *status, const char *path) {
         fprintf(log_fp, "[%-18s] %s\n", status, path);
         fflush(log_fp);
         pthread_mutex_unlock(&log_mutex);
+	if( verbose ) {
+            fprintf(stdout, "[%-18s] %s\n", status, path);
+	}
     }
 }
 
@@ -195,6 +199,8 @@ int main(int argc, char *argv[]) {
     else if (strcmp(argv[i], "-d") == 0) db_name = argv[++i];
     else if (strcmp(argv[i], "-c") == 0) verifyChecksum = 1;
     else if (strcmp(argv[i], "-u") == 0) update = 1;
+    else if (strcmp(argv[i], "-v") == 0) verbose = 1;
+    else if (strcmp(argv[i], "-h") == 0) fprintf( stderr, "Usage: [-c] [-u] [-v] [-l] [-t ThreadCount] -d DbName -p Path\n");
     else if (strcmp(argv[i], "-t") == 0) number_of_threads = atoi(argv[++i]);
   }
   if (!path || !db_name) exit(1);
