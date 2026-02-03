@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdarg.h> // Added for logging helper
+#include <stdarg.h>
 
 #define HASH_SIZE 65
 #define MAX_PATH 4096
@@ -22,8 +22,8 @@ int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0,
 
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
-pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER; 
-pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER; // Protect log writes
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct FileNode {
   char path[MAX_PATH];
@@ -32,12 +32,12 @@ typedef struct FileNode {
 } FileNode;
 
 FileNode *queue_head = NULL, *queue_tail = NULL;
-int done_traversal = 0; 
+int done_traversal = 0;
 char global_db_path[1024];
 int verifyChecksum = 0;
 int verbose = 0;
-int use_logging = 0;     // Flag for -l
-FILE *log_fp = NULL;     // Log file pointer
+int use_logging = 0;
+FILE *log_fp = NULL;
 
 // ==== Logging Helper ====
 void log_message(const char *format, ...) {
@@ -160,7 +160,7 @@ void process_file(const char *path, const char *name, sqlite3 *db) {
 
   rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
-    fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d, name=[%s], path=[%s]\n", rc, name, path); 
+    fprintf(stderr, "process_file: sqlite3_prepare_v2 failed: rc=%d, name=[%s], path=[%s]\n", rc, name, path);
     ++errorCount;
     return;
   }
@@ -280,7 +280,7 @@ int main(int argc, char *argv[]) {
     else if (strcmp(argv[i], "-c") == 0) verifyChecksum = 1;
     else if (strcmp(argv[i], "-v") == 0) verbose = 1;
     else if (strcmp(argv[i], "-u") == 0) update = 1;
-    else if (strcmp(argv[i], "-l") == 0) use_logging = 1; // New option
+    else if (strcmp(argv[i], "-l") == 0) use_logging = 1;
     else if (strcmp(argv[i], "-t") == 0) number_of_threads = atoi(argv[++i]);
     else if (strcmp(argv[i], "-h") == 0) help_requested = 1;
   }
@@ -293,18 +293,15 @@ int main(int argc, char *argv[]) {
 
   if (!path || !db_name) exit(1);
 
-  // Setup DB path
   const char *home = getenv("HOME");
-  snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s%s", home, db_name, 
+  snprintf(global_db_path, sizeof(global_db_path), "%s/db/FileTracker/%s%s", home, db_name,
            (strlen(db_name) > 3 && strcmp(db_name + strlen(db_name) - 3, ".db") == 0) ? "" : ".db");
 
-  // Create directories
   char *mkdir_cmd;
   asprintf(&mkdir_cmd, "mkdir -p %s/db/FileTracker/logs", home);
   system(mkdir_cmd);
   free(mkdir_cmd);
 
-  // Setup Logging if requested
   if (use_logging) {
       time_t now = time(NULL);
       struct tm *t = localtime(&now);
@@ -319,6 +316,19 @@ int main(int argc, char *argv[]) {
   sqlite3 *db;
   sqlite3_open(global_db_path, &db);
   sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT, keywords TEXT);", 0, 0, 0);
+
+  // Create Meta table without create_date
+  const char *meta_sql = "CREATE TABLE IF NOT EXISTS meta ("
+                         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                         "last_checksum_verify_date TEXT, "
+                         "last_date_verify TEXT, "
+                         "verify_machine TEXT, "
+                         "num_unchanged INTEGER, "
+                         "num_changed INTEGER, "
+                         "num_new INTEGER, "
+                         "num_missing INTEGER, "
+                         "num_errors INTEGER);";
+  sqlite3_exec(db, meta_sql, 0, 0, 0);
   sqlite3_close(db);
 
   pthread_t threads[number_of_threads];
@@ -351,6 +361,36 @@ int main(int argc, char *argv[]) {
       }
     }
     sqlite3_finalize(stmt);
+
+    // ==== Record This Run in Meta Table (No create_date) ====
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+
+    const char *col_checksum_date = verifyChecksum ? "datetime('now', 'localtime')" : "NULL";
+    const char *col_verify_date = !verifyChecksum ? "datetime('now', 'localtime')" : "NULL";
+
+    char *insert_meta_sql;
+    asprintf(&insert_meta_sql,
+             "INSERT INTO meta (last_checksum_verify_date, last_date_verify, "
+             "verify_machine, num_unchanged, num_changed, num_new, num_missing, num_errors) "
+             "VALUES (%s, %s, ?, ?, ?, ?, ?, ?);",
+             col_checksum_date, col_verify_date);
+
+    sqlite3_stmt *meta_stmt;
+    sqlite3_prepare_v2(db, insert_meta_sql, -1, &meta_stmt, NULL);
+
+    int bind_idx = 1;
+    sqlite3_bind_text(meta_stmt, bind_idx++, hostname, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(meta_stmt, bind_idx++, unchangedCount);
+    sqlite3_bind_int(meta_stmt, bind_idx++, changedCount);
+    sqlite3_bind_int(meta_stmt, bind_idx++, newCount);
+    sqlite3_bind_int(meta_stmt, bind_idx++, missingCount);
+    sqlite3_bind_int(meta_stmt, bind_idx++, errorCount);
+
+    sqlite3_step(meta_stmt);
+    sqlite3_finalize(meta_stmt);
+    free(insert_meta_sql);
+
     sqlite3_close(db);
   }
 
