@@ -13,6 +13,7 @@
 
 #define HASH_SIZE 65
 #define MAX_PATH 4096
+#define MAX_IGNORES 1024
 
 // ==== Globals ====
 int verbose = 0;
@@ -20,6 +21,10 @@ int number_of_threads = 4;
 int update = 0;
 int unchangedCount = 0, changedCount = 0, newCount = 0, missingCount = 0,
     ignoredCount = 0, errorCount = 0;
+
+// Ignore list globals
+char *ignore_list[MAX_IGNORES];
+int ignore_count = 0;
 
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
@@ -38,6 +43,34 @@ char global_db_path[1024];
 int verifyChecksum = 0;
 FILE *log_fp = NULL;
 
+// ==== Ignore List Helpers ====
+
+void load_ignore_list() {
+    const char *home = getenv("HOME");
+    char ignore_path[MAX_PATH];
+    snprintf(ignore_path, sizeof(ignore_path), "%s/.rsync-ignore", home);
+
+    FILE *f = fopen(ignore_path, "r");
+    if (!f) return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f) && ignore_count < MAX_IGNORES) {
+        // Remove newline
+        line[strcspn(line, "\r\n")] = 0;
+        if (strlen(line) > 0) {
+            ignore_list[ignore_count++] = strdup(line);
+        }
+    }
+    fclose(f);
+}
+
+int is_ignored(const char *name) {
+    for (int i = 0; i < ignore_count; i++) {
+        if (strcmp(name, ignore_list[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 // ==== Logging Helper ====
 void log_message(const char *status, const char *path) {
     if (log_fp) {
@@ -45,9 +78,9 @@ void log_message(const char *status, const char *path) {
         fprintf(log_fp, "[%-18s] %s\n", status, path);
         fflush(log_fp);
         pthread_mutex_unlock(&log_mutex);
-	if( verbose ) {
+        if( verbose ) {
             fprintf(stdout, "[%-18s] %s\n", status, path);
-	}
+        }
     }
 }
 
@@ -167,6 +200,13 @@ void traverse_directory(const char *dir_path) {
   struct dirent *entry;
   while ((entry = readdir(dir))) {
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+    
+    // Check against ignore list
+    if (is_ignored(entry->d_name)) {
+        pthread_mutex_lock(&count_mutex); ignoredCount++; pthread_mutex_unlock(&count_mutex);
+        continue;
+    }
+
     char full_path[MAX_PATH];
     struct stat st;
     snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
@@ -204,6 +244,9 @@ int main(int argc, char *argv[]) {
     else if (strcmp(argv[i], "-t") == 0) number_of_threads = atoi(argv[++i]);
   }
   if (!path || !db_name) exit(1);
+
+  // Load ignore list from ~/.rsync-ignore
+  load_ignore_list();
 
   const char *home = getenv("HOME");
 
@@ -285,9 +328,13 @@ int main(int argc, char *argv[]) {
   printf("Changed        | %-20d | %d\n", pC, changedCount);
   printf("New            | %-20d | %d\n", pN, newCount);
   printf("Missing        | %-20d | %d\n", pM, missingCount);
+  printf("Ignored        | %-20s | %d\n", "-", ignoredCount);
   printf("Errors         | %-20d | %d\n", pE, errorCount);
   printf("=============================================\n");
   printf("Detailed log created: %s\n", log_path);
+
+  // Cleanup ignore list
+  for (int i = 0; i < ignore_count; i++) free(ignore_list[i]);
 
   return 0;
 }
