@@ -312,7 +312,7 @@ int main(int argc, char *argv[]) {
 
   // Create $HOME/logs/file_tracker
   char log_dir[MAX_PATH], log_path[MAX_PATH], mkdir_cmd[MAX_PATH];
-  snprintf(log_dir, sizeof(log_dir), "%s/logs/file_tracker", home);
+  snprintf(log_dir, sizeof(log_dir), "%s/logs/FileTracker", home);
   snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", log_dir);
   system(mkdir_cmd);
 
