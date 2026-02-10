@@ -252,8 +252,10 @@ void *path_worker(void *arg) {
 
 int main(int argc, char *argv[]) {
     char *path_arg = NULL;
+    char *log_file = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0) path_arg = argv[++i];
+        else if (strcmp(argv[i], "-l") == 0) log_file = argv[++i];
         else if (strcmp(argv[i], "-c") == 0) verifyChecksum = 1;
         else if (strcmp(argv[i], "-u") == 0) update = 1;
         else if (strcmp(argv[i], "-v") == 0) verbose = 1;
@@ -286,7 +288,12 @@ int main(int argc, char *argv[]) {
         char *base = basename(path_copy);
 
         snprintf(contexts[thread_count].db_path, MAX_PATH, "%s/db/FileTracker/%s.db", home, base);
-        snprintf(contexts[thread_count].log_path, MAX_PATH, "%s/logs/FileTracker/%s-%s.log", home, base, timestamp);
+
+        if (!log_file) {
+            snprintf(contexts[thread_count].log_path, MAX_PATH, "%s/logs/FileTracker/%s-%s.log", home, base, timestamp);
+        } else {
+            snprintf(contexts[thread_count].log_path, MAX_PATH, "%s.log", log_file);
+        }
 
         contexts[thread_count].log_fp = fopen(contexts[thread_count].log_path, "w");
         contexts[thread_count].unchanged = contexts[thread_count].changed = 0;
