@@ -195,10 +195,17 @@ void *path_worker(void *arg) {
     sqlite3 *db;
 
     if (sqlite3_open(ctx->db_path, &db) != SQLITE_OK) return NULL;
-    sqlite3_busy_timeout(db, 10000);
+    
+    // Enable WAL mode for better concurrency
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL;", 0, 0, 0);
+    sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", 0, 0, 0);
+    sqlite3_busy_timeout(db, 30000);  // Increased timeout for concurrent access
 
     sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT, keywords TEXT);", 0, 0, 0);
     sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY AUTOINCREMENT, last_checksum_verify_date TEXT, last_date_verify TEXT, verify_machine TEXT, num_unchanged INTEGER, num_changed INTEGER, num_new INTEGER, num_missing INTEGER, num_errors INTEGER);", 0, 0, 0);
+
+    // Begin transaction for better performance and reduced lock contention
+    sqlite3_exec(db, "BEGIN TRANSACTION;", 0, 0, 0);
 
     traverse_directory(ctx, ctx->source_path, db);
 
@@ -234,6 +241,9 @@ void *path_worker(void *arg) {
     sqlite3_step(insMeta);
     sqlite3_finalize(insMeta);
     free(sql);
+
+    // Commit transaction
+    sqlite3_exec(db, "COMMIT;", 0, 0, 0);
 
     sqlite3_close(db);
     // Note: log_fp is now closed in main() to allow appending the summary
