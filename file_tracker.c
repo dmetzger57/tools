@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <locale.h>
 
 #define HASH_SIZE 65
 #define MAX_PATH 4096
@@ -263,6 +264,9 @@ void *path_worker(void *arg) {
 int main(int argc, char *argv[]) {
     char *path_arg = NULL;
     char *log_file = NULL;
+
+    setlocale(LC_NUMERIC, "");
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0) path_arg = argv[++i];
         else if (strcmp(argv[i], "-l") == 0) log_file = argv[++i];
@@ -326,12 +330,12 @@ int main(int argc, char *argv[]) {
     const char *summary_footer = "==================================================\n";
 
     printf("%s", summary_header);
-    printf("Unchanged      : %d\n", total_unchanged);
-    printf("Changed        : %d\n", total_changed);
-    printf("New            : %d\n", total_new);
-    printf("Missing        : %d\n", total_missing);
-    printf("Ignored        : %d\n", total_ignored);
-    printf("Errors         : %d\n", total_error);
+    printf("Unchanged      : %'d\n", total_unchanged);
+    printf("Changed        : %'d\n", total_changed);
+    printf("New            : %'d\n", total_new);
+    printf("Missing        : %'d\n", total_missing);
+    printf("Ignored        : %'d\n", total_ignored);
+    printf("Errors         : %'d\n", total_error);
     printf("%s", summary_footer);
 
     for (int i = 0; i < thread_count; i++) {
