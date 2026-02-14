@@ -5,7 +5,7 @@
 SOURCE_DIR="${HOME}/Desktop"
 
 # The master directory where all backups will be stored
-BACKUP_ROOT="/Volumes/backups"
+BACKUP_ROOT="/Volumes/sabrent-Backups"
 if mount | grep -q "${BACKUP_ROOT}"; then
     BACKUP_ROOT="${BACKUP_ROOT}/Desktop"
 else
