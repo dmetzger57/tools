@@ -22,15 +22,23 @@
 int verbose = 0;
 int update = 0;
 int verifyChecksum = 0;
+int showProgress = 0;
+int showSummary = 0;
 
 // Aggregate counters (Protected by global_count_mutex)
 int total_unchanged = 0, total_changed = 0, total_new = 0, total_missing = 0,
     total_ignored = 0, total_error = 0;
 
+// Progress tracking (Protected by progress_mutex)
+int total_files = 0;
+int processed_files = 0;
+int last_percent_displayed = -1;
+
 char *ignore_list[MAX_IGNORES];
 int ignore_count = 0;
 
 pthread_mutex_t global_count_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t progress_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
     char source_path[MAX_PATH];
@@ -64,6 +72,54 @@ int is_ignored(const char *name) {
         if (strcmp(name, ignore_list[i]) == 0) return 1;
     }
     return 0;
+}
+
+// ==== Progress Tracking ====
+int count_files_recursive(const char *dir_path) {
+    int count = 0;
+    DIR *dir = opendir(dir_path);
+    if (!dir) return 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        if (is_ignored(entry->d_name)) continue;
+
+        char full_path[MAX_PATH];
+        struct stat st;
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        if (path_len >= (int)sizeof(full_path)) continue;
+
+        if (stat(full_path, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                count += count_files_recursive(full_path);
+            } else if (strcmp(entry->d_name, ".DS_Store") != 0 && strcmp(entry->d_name, "LastSyncDate") != 0 && S_ISREG(st.st_mode)) {
+                count++;
+            }
+        }
+    }
+    closedir(dir);
+    return count;
+}
+
+void display_progress() {
+    pthread_mutex_lock(&progress_mutex);
+
+    if (total_files == 0) {
+        pthread_mutex_unlock(&progress_mutex);
+        return;
+    }
+
+    int current_percent = (processed_files * 100) / total_files;
+
+    // Only update display when crossing a 1% boundary
+    if (current_percent > last_percent_displayed) {
+        last_percent_displayed = current_percent;
+        if( showProgress ) printf("\r%d%% (%'d of %'d)", current_percent, processed_files, total_files);
+        fflush(stdout);
+    }
+
+    pthread_mutex_unlock(&progress_mutex);
 }
 
 // ==== Logging Helper ====
@@ -199,6 +255,14 @@ void process_file(ThreadContext *ctx, const char *path, const char *name, sqlite
         ctx->new++;
     }
     sqlite3_finalize(stmt);
+
+    // Update progress if enabled
+    if ( showProgress) {
+        pthread_mutex_lock(&progress_mutex);
+        processed_files++;
+        pthread_mutex_unlock(&progress_mutex);
+        display_progress();
+    }
 }
 
 void traverse_directory(ThreadContext *ctx, const char *dir_path, sqlite3 *db) {
@@ -220,8 +284,13 @@ void traverse_directory(ThreadContext *ctx, const char *dir_path, sqlite3 *db) {
             continue;
         }
         if (stat(full_path, &st) == 0) {
-            if (S_ISDIR(st.st_mode)) traverse_directory(ctx, full_path, db);
-            else if (strcmp(entry->d_name, ".DS_Store") != 0) process_file(ctx, full_path, entry->d_name, db);
+            if (S_ISDIR(st.st_mode)) {
+                traverse_directory(ctx, full_path, db);
+            } else if (strcmp(entry->d_name, ".DS_Store") == 0 || strcmp(entry->d_name, "LastSyncDate") == 0) {
+                ctx->ignored++;
+            } else {
+                process_file(ctx, full_path, entry->d_name, db);
+            }
         }
     }
     closedir(dir);
@@ -250,11 +319,14 @@ void *path_worker(void *arg) {
     // Begin transaction for better performance and reduced lock contention
     sqlite3_exec(db, "BEGIN TRANSACTION;", 0, 0, 0);
 
+    if( showProgress ) printf("Beginning traversal of %s\n",ctx->source_path);
     traverse_directory(ctx, ctx->source_path, db);
+    if( showProgress ) printf("Traversal of %s complete\n",ctx->source_path);
 
     char **missing_paths = NULL;
     int missing_count = 0, missing_capacity = 0;
 
+    if( showProgress ) printf("Beginning Database Update\n");
     sqlite3_stmt *mStmt;
     sqlite3_prepare_v2(db, "SELECT full_path FROM files", -1, &mStmt, NULL);
     while (sqlite3_step(mStmt) == SQLITE_ROW) {
@@ -269,9 +341,11 @@ void *path_worker(void *arg) {
         }
     }
     sqlite3_finalize(mStmt);
+    if( showProgress ) printf("Datbase Update Complete\n");
 
     // Now delete the collected missing paths
     for (int i = 0; i < missing_count; i++) {
+        if( showProgress ) printf("Deleting missing files from the database\n");
         ctx->missing++;
         log_message(ctx, "MISSING", missing_paths[i]);
         if (update) {
@@ -282,6 +356,7 @@ void *path_worker(void *arg) {
             sqlite3_finalize(dStmt);
         }
         free(missing_paths[i]);
+        if( showProgress ) printf("Completed deleting missing files from the database\n");
     }
     free(missing_paths);
 
@@ -303,7 +378,9 @@ void *path_worker(void *arg) {
     free(sql);
 
     // Commit transaction
+    if( showProgress ) printf("Commiting Database Transaction\n");
     sqlite3_exec(db, "COMMIT;", 0, 0, 0);
+    if( showProgress ) printf("Database Transaction Commit Complete\n");
 
     sqlite3_close(db);
     // Note: log_fp is now closed in main() to allow appending the summary
@@ -328,22 +405,32 @@ int main(int argc, char *argv[]) {
 
     setlocale(LC_NUMERIC, "");
 
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0) path_arg = argv[++i];
         else if (strcmp(argv[i], "-c") == 0) verifyChecksum = 1;
         else if (strcmp(argv[i], "-u") == 0) update = 1;
         else if (strcmp(argv[i], "-v") == 0) verbose = 1;
+        else if (strcmp(argv[i], "-P") == 0) showProgress = 1;
         else if (strcmp(argv[i], "-h") == 0) help_requested = 1;
+        else if (strcmp(argv[i], "-s") == 0) showSummary = 1;
     }
 
     if (help_requested == 1) {
-        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v]\n", argv[0]);
+        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v] [-P] [-s]\n", argv[0]);
+        fprintf(stderr, "  -p <paths>  Paths to scan (required, comma-separated)\n");
+        fprintf(stderr, "  -c          Verify checksums even if mtime unchanged\n");
+        fprintf(stderr, "  -u          Update database with changes\n");
+        fprintf(stderr, "  -v          Verbose output\n");
+        fprintf(stderr, "  -P          Show progress percentage\n");
+        fprintf(stderr, "  -s          Show summary\n");
         exit(0);
     }
 
-    if (!path_arg) {
+    if ( ! path_arg) {
         fprintf(stderr, "Error: -p option is required\n");
-        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v]\n", argv[0]);
+        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v] [-V]\n", argv[0]);
         exit(1);
     }
 
@@ -359,6 +446,25 @@ int main(int argc, char *argv[]) {
     }
     if (mkdir_p(db_dir) != 0) {
         fprintf(stderr, "Warning: Could not create db directory %s: %s\n", db_dir, strerror(errno));
+    }
+
+    // Count total files if progress mode is enabled
+    if ( showProgress) {
+        char *path_copy = strdup(path_arg);
+        char *count_token = strtok(path_copy, ",");
+
+	printf("Counting Total Number Of Files To Process ... ");
+        while (count_token) {
+            total_files += count_files_recursive(count_token);
+            count_token = strtok(NULL, ",");
+        }
+        free(path_copy);
+        if (total_files > 0) {
+            if( showProgress ) printf("Found %'d files to process\n", total_files);
+        }
+	else {
+            if( showProgress ) printf("No Files Found To Process\n");
+        }
     }
 
     char *token = strtok(path_arg, ",");
@@ -409,18 +515,21 @@ int main(int argc, char *argv[]) {
         pthread_join(threads[i], NULL);
     }
 
+    // Clear progress line if it was displayed
+    if ( showProgress && total_files > 0) printf("\n");
+
     // Output and Log Summary
     const char *summary_header = "\n================ AGGREGATE SUMMARY ================\n";
     const char *summary_footer = "==================================================\n";
 
-    printf("%s", summary_header);
-    printf("Unchanged      : %'d\n", total_unchanged);
-    printf("Changed        : %'d\n", total_changed);
-    printf("New            : %'d\n", total_new);
-    printf("Missing        : %'d\n", total_missing);
-    printf("Ignored        : %'d\n", total_ignored);
-    printf("Errors         : %'d\n", total_error);
-    printf("%s", summary_footer);
+    if( showSummary ) printf("%s", summary_header);
+    if( showSummary ) printf("Unchanged      : %'d\n", total_unchanged);
+    if( showSummary ) printf("Changed        : %'d\n", total_changed);
+    if( showSummary ) printf("New            : %'d\n", total_new);
+    if( showSummary ) printf("Missing        : %'d\n", total_missing);
+    if( showSummary ) printf("Ignored        : %'d\n", total_ignored);
+    if( showSummary ) printf("Errors         : %'d\n", total_error);
+    if( showSummary ) printf("%s", summary_footer);
 
     for (int i = 0; i < thread_count; i++) {
         if (contexts[i].log_fp) {
