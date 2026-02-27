@@ -314,7 +314,7 @@ void *path_worker(void *arg) {
     sqlite3_busy_timeout(db, 30000);  // Increased timeout for concurrent access
 
     sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, file_name TEXT, full_path TEXT UNIQUE, size INTEGER, created INTEGER, last_modified INTEGER, owner TEXT, checksum TEXT, keywords TEXT);", 0, 0, 0);
-    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY AUTOINCREMENT, last_checksum_verify_date TEXT, last_date_verify TEXT, verify_machine TEXT, num_unchanged INTEGER, num_changed INTEGER, num_new INTEGER, num_missing INTEGER, num_errors INTEGER);", 0, 0, 0);
+    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY AUTOINCREMENT, last_checksum_verify_date TEXT, last_date_verify TEXT, verify_machine TEXT, num_unchanged INTEGER, num_changed INTEGER, num_new INTEGER, num_missing INTEGER, num_errors INTEGER, update_mode TEXT);", 0, 0, 0);
 
     // Begin transaction for better performance and reduced lock contention
     sqlite3_exec(db, "BEGIN TRANSACTION;", 0, 0, 0);
@@ -363,7 +363,7 @@ void *path_worker(void *arg) {
     char hname[256];
     gethostname(hname, 256);
     char *sql;
-    asprintf(&sql, "INSERT INTO meta (%s, verify_machine, num_unchanged, num_changed, num_new, num_missing, num_errors) VALUES (datetime('now','localtime'), ?, ?, ?, ?, ?, ?)",
+    asprintf(&sql, "INSERT INTO meta (%s, verify_machine, num_unchanged, num_changed, num_new, num_missing, num_errors, update_mode) VALUES (datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
              verifyChecksum ? "last_checksum_verify_date" : "last_date_verify");
     sqlite3_stmt *insMeta;
     sqlite3_prepare_v2(db, sql, -1, &insMeta, NULL);
@@ -373,6 +373,7 @@ void *path_worker(void *arg) {
     sqlite3_bind_int(insMeta, 4, ctx->new);
     sqlite3_bind_int(insMeta, 5, ctx->missing);
     sqlite3_bind_int(insMeta, 6, ctx->error);
+    sqlite3_bind_text(insMeta, 7, update ? "ON" : "OFF", -1, SQLITE_STATIC);
     sqlite3_step(insMeta);
     sqlite3_finalize(insMeta);
     free(sql);
@@ -418,7 +419,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (help_requested == 1) {
-        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v] [-P] [-s]\n", argv[0]);
+        fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v] [-V]\n", argv[0]);
         fprintf(stderr, "  -p <paths>  Paths to scan (required, comma-separated)\n");
         fprintf(stderr, "  -c          Verify checksums even if mtime unchanged\n");
         fprintf(stderr, "  -u          Update database with changes\n");
