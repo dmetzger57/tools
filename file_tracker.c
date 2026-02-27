@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <libgen.h>
 #include <locale.h>
+#include <errno.h>
 
 #define HASH_SIZE 65
 #define MAX_PATH 4096
@@ -108,13 +109,43 @@ void get_owner(uid_t uid, char *owner, size_t size) {
     else snprintf(owner, size, "%d", uid);
 }
 
+// ==== Utility: Create directory with parents ====
+int mkdir_p(const char *path) {
+    char tmp[MAX_PATH];
+    char *p = NULL;
+    size_t len;
+
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/') tmp[len - 1] = 0;
+
+    for (p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = 0;
+            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
+                return -1;
+            }
+            *p = '/';
+        }
+    }
+    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
+        return -1;
+    }
+    return 0;
+}
+
 // ==== Core Logic ====
 void process_file(ThreadContext *ctx, const char *path, const char *name, sqlite3 *db) {
     struct stat st;
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return;
 
     sqlite3_stmt *stmt;
-    sqlite3_prepare_v2(db, "SELECT last_modified, checksum FROM files WHERE full_path = ? LIMIT 1", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, "SELECT last_modified, checksum FROM files WHERE full_path = ? LIMIT 1", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQLite prepare error: %s\n", sqlite3_errmsg(db));
+        ctx->error++;
+        return;
+    }
     sqlite3_bind_text(stmt, 1, path, -1, SQLITE_STATIC);
 
     if (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -182,10 +213,15 @@ void traverse_directory(ThreadContext *ctx, const char *dir_path, sqlite3 *db) {
         }
         char full_path[MAX_PATH];
         struct stat st;
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        if (path_len >= (int)sizeof(full_path)) {
+            fprintf(stderr, "Warning: Path too long, skipping: %s/%s\n", dir_path, entry->d_name);
+            ctx->error++;
+            continue;
+        }
         if (stat(full_path, &st) == 0) {
             if (S_ISDIR(st.st_mode)) traverse_directory(ctx, full_path, db);
-            else if (strstr(full_path, ".DS_Store") == NULL) process_file(ctx, full_path, entry->d_name, db);
+            else if (strcmp(entry->d_name, ".DS_Store") != 0) process_file(ctx, full_path, entry->d_name, db);
         }
     }
     closedir(dir);
@@ -195,8 +231,14 @@ void *path_worker(void *arg) {
     ThreadContext *ctx = (ThreadContext *)arg;
     sqlite3 *db;
 
-    if (sqlite3_open(ctx->db_path, &db) != SQLITE_OK) return NULL;
-    
+    if (sqlite3_open(ctx->db_path, &db) != SQLITE_OK) {
+        fprintf(stderr, "Error: Failed to open database %s\n", ctx->db_path);
+        if (ctx->log_fp) {
+            fprintf(ctx->log_fp, "FATAL ERROR: Could not open database\n");
+        }
+        return NULL;
+    }
+
     // Enable WAL mode for better concurrency
     sqlite3_exec(db, "PRAGMA journal_mode=WAL;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", 0, 0, 0);
@@ -210,21 +252,38 @@ void *path_worker(void *arg) {
 
     traverse_directory(ctx, ctx->source_path, db);
 
+    char **missing_paths = NULL;
+    int missing_count = 0, missing_capacity = 0;
+
     sqlite3_stmt *mStmt;
     sqlite3_prepare_v2(db, "SELECT full_path FROM files", -1, &mStmt, NULL);
     while (sqlite3_step(mStmt) == SQLITE_ROW) {
         const char *dp = (const char *)sqlite3_column_text(mStmt, 0);
         if (access(dp, F_OK) != 0) {
-            ctx->missing++;
-            log_message(ctx, "MISSING", dp);
-            sqlite3_stmt *dStmt;
-            sqlite3_prepare_v2(db, "DELETE FROM files WHERE full_path = ?", -1, &dStmt, NULL);
-            sqlite3_bind_text(dStmt, 1, dp, -1, SQLITE_STATIC);
-            sqlite3_step(dStmt);
-            sqlite3_finalize(dStmt);
+            // Expand array if needed
+            if (missing_count >= missing_capacity) {
+                missing_capacity = missing_capacity == 0 ? 32 : missing_capacity * 2;
+                missing_paths = realloc(missing_paths, missing_capacity * sizeof(char*));
+            }
+            missing_paths[missing_count++] = strdup(dp);
         }
     }
     sqlite3_finalize(mStmt);
+
+    // Now delete the collected missing paths
+    for (int i = 0; i < missing_count; i++) {
+        ctx->missing++;
+        log_message(ctx, "MISSING", missing_paths[i]);
+        if (update) {
+            sqlite3_stmt *dStmt;
+            sqlite3_prepare_v2(db, "DELETE FROM files WHERE full_path = ?", -1, &dStmt, NULL);
+            sqlite3_bind_text(dStmt, 1, missing_paths[i], -1, SQLITE_STATIC);
+            sqlite3_step(dStmt);
+            sqlite3_finalize(dStmt);
+        }
+        free(missing_paths[i]);
+    }
+    free(missing_paths);
 
     char hname[256];
     gethostname(hname, 256);
@@ -277,13 +336,13 @@ int main(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-h") == 0) help_requested = 1;
     }
 
-    if( help_requested == 1 ) {
+    if (help_requested == 1) {
         fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v]\n", argv[0]);
-	exit( 0 );
+        exit(0);
     }
 
     if (!path_arg) {
-	fprintf(stderr, "Error: -p option is required\n");
+        fprintf(stderr, "Error: -p option is required\n");
         fprintf(stderr, "Usage: %s -p /path1,/path2 [-c] [-u] [-v]\n", argv[0]);
         exit(1);
     }
@@ -291,12 +350,19 @@ int main(int argc, char *argv[]) {
     load_ignore_list();
     const char *home = getenv("HOME");
 
-    char cmd[MAX_PATH];
-    snprintf(cmd, sizeof(cmd), "mkdir -p %s/logs/FileTracker %s/db/FileTracker", home, home);
-    system(cmd);
+    char log_dir[MAX_PATH], db_dir[MAX_PATH];
+    snprintf(log_dir, sizeof(log_dir), "%s/logs/FileTracker", home);
+    snprintf(db_dir, sizeof(db_dir), "%s/db/FileTracker", home);
+
+    if (mkdir_p(log_dir) != 0) {
+        fprintf(stderr, "Warning: Could not create log directory %s: %s\n", log_dir, strerror(errno));
+    }
+    if (mkdir_p(db_dir) != 0) {
+        fprintf(stderr, "Warning: Could not create db directory %s: %s\n", db_dir, strerror(errno));
+    }
 
     char *token = strtok(path_arg, ",");
-    ThreadContext contexts[64]; 
+    ThreadContext contexts[64];
     pthread_t threads[64];
     int thread_count = 0;
 
@@ -306,7 +372,8 @@ int main(int argc, char *argv[]) {
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", t);
 
     while (token && thread_count < 64) {
-        strncpy(contexts[thread_count].source_path, token, MAX_PATH);
+        strncpy(contexts[thread_count].source_path, token, MAX_PATH - 1);
+        contexts[thread_count].source_path[MAX_PATH - 1] = '\0';
         char *path_copy = strdup(token);
         char *base = basename(path_copy);
 
@@ -319,11 +386,23 @@ int main(int argc, char *argv[]) {
         contexts[thread_count].new = contexts[thread_count].missing = 0;
         contexts[thread_count].ignored = contexts[thread_count].error = 0;
 
-        pthread_create(&threads[thread_count], NULL, path_worker, &contexts[thread_count]);
+        if (pthread_create(&threads[thread_count], NULL, path_worker, &contexts[thread_count]) != 0) {
+            fprintf(stderr, "Error: Failed to create thread for path %s: %s\n",
+                    contexts[thread_count].source_path, strerror(errno));
+            if (contexts[thread_count].log_fp) {
+                fclose(contexts[thread_count].log_fp);
+            }
+            free(path_copy);
+            continue;  // Skip this path but continue with others
+        }
 
         free(path_copy);
         thread_count++;
         token = strtok(NULL, ",");
+    }
+
+    if (token != NULL) {
+        fprintf(stderr, "Warning: Maximum of 64 paths supported. Additional paths ignored.\n");
     }
 
     for (int i = 0; i < thread_count; i++) {
